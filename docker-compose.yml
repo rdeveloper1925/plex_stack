@@ -50,20 +50,18 @@ services:
     stop_grace_period: 10s
     restart: unless-stopped
 
-  plex:
-    image: lscr.io/linuxserver/plex:latest
+  jellyfin:
+    image: lscr.io/linuxserver/jellyfin:latest
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
-      - VERSION=docker
-      - PLEX_CLAIM=${PLEX_CLAIM}
+      - JELLYFIN_PublishedServerUrl=${JELLYFIN_PUBLISHED_SERVER_URL}
     volumes:
-      - ${CONFIG_ROOT}/plex:/config
+      - ${CONFIG_ROOT}/jellyfin:/config
       - ${MEDIA_ROOT}:/data
     ports:
-      - "127.0.0.1:32400:32400/tcp"
-      - "${BIND_IP}:32400:32400/tcp"
+      - "127.0.0.1:8096:8096/tcp"
     networks:
       - dokploy-network
     restart: unless-stopped
