@@ -18,10 +18,10 @@ fi
 
 if [ -f "${CONF}" ]; then
     sed -i \
-        -e "s|Downloads\\\\SavePath=/downloads/|Downloads\\\\SavePath=${SAVE_PATH}/|g" \
-        -e "s|Downloads\\\\TempPath=/downloads/incomplete/|Downloads\\\\TempPath=${TEMP_PATH}/|g" \
-        -e "s|Session\\\\DefaultSavePath=/downloads/|Session\\\\DefaultSavePath=${SAVE_PATH}/|g" \
-        -e "s|Session\\\\TempPath=/downloads/incomplete/|Session\\\\TempPath=${TEMP_PATH}/|g" \
+        -e "s|^Downloads\\\\SavePath=.*|Downloads\\\\SavePath=${SAVE_PATH}/|" \
+        -e "s|^Downloads\\\\TempPath=.*|Downloads\\\\TempPath=${TEMP_PATH}/|" \
+        -e "s|^Session\\\\DefaultSavePath=.*|Session\\\\DefaultSavePath=${SAVE_PATH}/|" \
+        -e "s|^Session\\\\TempPath=.*|Session\\\\TempPath=${TEMP_PATH}/|" \
         "${CONF}"
 
   # Required for Gluetun to push the forwarded port via the Web API.
