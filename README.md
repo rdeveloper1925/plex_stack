@@ -1,0 +1,412 @@
+# Plex + *arr Media Stack
+
+A self-hosted media automation stack deployed via Docker Compose on [Dokploy](https://dokploy.com). Torrent downloads are routed exclusively through a PIA VPN kill switch; everything else runs on the normal Docker network for reliability.
+
+**Plex** is the only service exposed to the internet (via Cloudflare Tunnel). All admin UIs bind to the deploy host's Tailscale IP and are not routed through Dokploy Traefik.
+
+## Overview
+
+| Service | Role |
+|---------|------|
+| **Seerr** | Search and request movies/TV shows |
+| **Plex** | Stream your library (public via host Cloudflare Tunnel) |
+| **Sonarr** | Automate TV show downloads and organization |
+| **Radarr** | Automate movie downloads and organization |
+| **Prowlarr** | Central indexer manager for Sonarr and Radarr |
+| **FlareSolverr** | Cloudflare bypass for VPN-routed indexers (e.g. 1337x) |
+| **qBittorrent** | Torrent client (VPN-only) |
+| **Gluetun** | VPN gateway and kill switch for qBittorrent |
+
+## Architecture
+
+Only **qBittorrent**, **Prowlarr**, and **FlareSolverr** route through the VPN. Sonarr, Radarr, Plex, and Seerr stay on the normal Docker network so inter-app APIs stay reliable. Gluetun provides a built-in kill switch: if the VPN drops, VPN-routed containers lose all network access.
+
+Admin UIs publish ports on `${BIND_IP}` (the deploy host's Tailscale address). **Plex** also binds to `127.0.0.1:32400` for the host `cloudflared` service.
+
+```mermaid
+flowchart TB
+    Internet --> CF[Host_cloudflared]
+    CF -->|"127.0.0.1:32400"| Plex
+
+    Admin[Browser_on_Tailscale] --> Seerr
+    Admin --> Sonarr
+    Admin --> Radarr
+    Admin --> Prowlarr
+    Admin -->|"BIND_IP:8080"| Gluetun
+
+    Seerr --> Plex
+    Seerr --> Sonarr
+    Seerr --> Radarr
+
+    Sonarr -->|"gluetun:8080"| Gluetun
+    Radarr -->|"gluetun:8080"| Gluetun
+    Sonarr -->|"gluetun:9696"| Gluetun
+    Radarr -->|"gluetun:9696"| Gluetun
+
+    Prowlarr --> FlareSolverr
+    FlareSolverr --> Indexers[Indexer_sites]
+
+    qBit[qBittorrent] -->|"network_mode: service:gluetun"| Gluetun
+    ProwlarrVPN[Prowlarr] -->|"network_mode: service:gluetun"| Gluetun
+    FlareSolverr -->|"network_mode: service:gluetun"| Gluetun
+    Gluetun -->|"OpenVPN"| PIA[PIA_VPN]
+    qBit --> TorrentPeers[Torrent_peers]
+```
+
+### Download flow
+
+1. You request content in **Seerr** (or add it directly in Sonarr/Radarr).
+2. **Sonarr** or **Radarr** searches indexers via **Prowlarr**.
+3. A matching torrent is sent to **qBittorrent** (reachable at `gluetun:8080` on the Docker network).
+4. **qBittorrent** downloads the file through the **PIA VPN** tunnel managed by **Gluetun**.
+5. On completion, Sonarr/Radarr import the file into your library using a **hardlink** (no duplicate disk usage).
+6. **Plex** picks up the new file and makes it available to stream.
+
+## Project files
+
+| File | Purpose |
+|------|---------|
+| `docker-compose.yml` | Full stack definition |
+| `.env` | Your real configuration and secrets (gitignored) |
+| `.env.example` | Documented template — copy to `.env` and fill in |
+| `DOKPLOY-IMPLEMENTATION-GUIDE.md` | Step-by-step Dokploy deployment and configuration walkthrough |
+| `.gitignore` | Excludes `.env` and local `config/` directories |
+
+## Container images
+
+| Service | Image | Notes |
+|---------|-------|-------|
+| Plex | `lscr.io/linuxserver/plex:latest` | `127.0.0.1:32400` for cloudflared; `${BIND_IP}:32400` for Tailscale admin |
+| qBittorrent | `lscr.io/linuxserver/qbittorrent:latest` | libtorrent v2 |
+| Sonarr | `lscr.io/linuxserver/sonarr:latest` | |
+| Radarr | `lscr.io/linuxserver/radarr:latest` | |
+| Prowlarr | `lscr.io/linuxserver/prowlarr:latest` | VPN-routed via `network_mode: service:gluetun` |
+| FlareSolverr | `ghcr.io/flaresolverr/flaresolverr:latest` | VPN-routed; Prowlarr reaches it at `http://127.0.0.1:8191` |
+| Seerr | `ghcr.io/seerr-team/seerr:latest` | Config at `/app/config`; runs as UID 1000 |
+| Gluetun | `qmcgaw/gluetun:latest` | PIA OpenVPN client and kill switch |
+
+All application images use [linuxserver.io](https://www.linuxserver.io/our-images) where available. Seerr and Gluetun are the exceptions.
+
+## Prerequisites
+
+- A [Dokploy](https://dokploy.com) instance (primary) with a remote deploy target running Docker Compose
+- [Tailscale](https://tailscale.com/) on the deploy host (for private admin UI access)
+- [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) installed on the deploy host (for Plex public access)
+- A domain managed in Cloudflare (for the Plex tunnel)
+- An active [Private Internet Access](https://www.privateinternetaccess.com/) subscription
+- A [Plex](https://www.plex.tv/) account
+- Sufficient disk space for media and downloads on the same filesystem (required for hardlinks)
+
+## Storage layout
+
+Use one shared root mount so Sonarr and Radarr can hardlink completed torrents into the library without duplicating data on disk.
+
+```
+${MEDIA_ROOT}/
+  torrents/              # qBittorrent downloads here
+    movies/
+    tv/
+  media/
+    movies/              # Radarr final library (Plex movies)
+    tv/                  # Sonarr final library (Plex TV)
+
+${CONFIG_ROOT}/
+  plex/
+  sonarr/
+  radarr/
+  prowlarr/
+  seerr/
+  qbittorrent/
+  gluetun/
+```
+
+Inside every container that mounts media, the path is `/data`. Config is at `/config` (linuxserver) or `/app/config` (Seerr).
+
+### Create directories on the deploy host
+
+Replace the paths with your actual `MEDIA_ROOT` and `CONFIG_ROOT` values:
+
+```bash
+export MEDIA_ROOT=/your/custom/media/path
+export CONFIG_ROOT=/your/custom/config/path
+export PUID=1000
+export PGID=1000
+
+mkdir -p ${MEDIA_ROOT}/torrents/{movies,tv,incomplete}
+mkdir -p ${MEDIA_ROOT}/media/{movies,tv}
+mkdir -p ${CONFIG_ROOT}/{plex,sonarr,radarr,prowlarr,seerr,qbittorrent,gluetun}
+
+chown -R ${PUID}:${PGID} ${MEDIA_ROOT} ${CONFIG_ROOT}
+```
+
+Get your UID/GID with `id your_user` on the host.
+
+## Environment variables
+
+All configuration lives in a single `.env` file. Copy `.env.example` to `.env` and fill in your values:
+
+```bash
+cp .env.example .env
+```
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `PUID` | User ID for file ownership | `1000` |
+| `PGID` | Group ID for file ownership | `1000` |
+| `TZ` | Timezone | `America/New_York` |
+| `MEDIA_ROOT` | Absolute path to media and downloads on the host | `/mnt/media` |
+| `CONFIG_ROOT` | Absolute path to app config on the host | `/mnt/config` |
+| `BIND_IP` | Tailscale IP to bind admin UI ports (`tailscale ip -4`) | `100.x.x.x` |
+| `OPENVPN_USER` | PIA username | `p1234567` |
+| `OPENVPN_PASSWORD` | PIA password | |
+| `SERVER_REGIONS` | Comma-separated PIA regions (non-US; used with `PORT_FORWARD_ONLY` in compose) | `Netherlands,CA Toronto` |
+| `VPN_PORT_FORWARDING` | Enable PIA port forwarding in Gluetun | `on` |
+| `LAN_SUBNET` | LAN + Tailscale CIDRs for Gluetun firewall (comma-separated) | `192.168.1.0/24,100.64.0.0/10` |
+| `DOCKER_SUBNET` | Docker network CIDR (Gluetun firewall allowlist) | `10.0.0.0/8` |
+| `PLEX_CLAIM` | Plex claim token from https://plex.tv/claim | |
+| `WEBUI_PORT` | qBittorrent web UI port | `8080` |
+| `PROWLARR_PORT` | Prowlarr web UI port (published on gluetun) | `9696` |
+
+In Dokploy, paste the same variables into the project's **Environment** tab on the **primary** instance. Compose substitutes `${VAR}` references in `docker-compose.yml`. VPN credentials are only passed to the Gluetun service block — other containers do not receive them.
+
+## Dokploy deployment
+
+This stack is designed for a **remote deploy target** (secondary server) managed from a primary Dokploy instance. Traefik on the deploy host is not used for these services.
+
+### 1. Create the project (primary Dokploy)
+
+1. Open Dokploy → **Projects** → create or select a project.
+2. Add a **Docker Compose** service targeting your remote server.
+3. Point it at this repository or paste the contents of `docker-compose.yml`.
+
+   Deploy from the full repository so the `qbittorrent-init/` directory is present on the deploy host (required for automatic qBittorrent path configuration).
+
+### 2. Set environment variables
+
+Paste all values from your `.env` file into the Dokploy **Environment** tab. Set `BIND_IP` to the deploy host's Tailscale address (`tailscale ip -4` on that host).
+
+### 3. Deploy
+
+Click **Deploy**. Dokploy will pull images, create containers, and attach them to `dokploy-network`.
+
+### 4. Do not assign Dokploy domains
+
+**Skip the Domains tab** for all services in this stack. Admin UIs are reached at `http://${BIND_IP}:<port>` over Tailscale. Plex is reached via your Cloudflare Tunnel hostname.
+
+| Service | Tailscale URL | Port |
+|---------|---------------|------|
+| **seerr** | `http://100.x.x.x:5055` | 5055 |
+| sonarr | `http://100.x.x.x:8989` | 8989 |
+| radarr | `http://100.x.x.x:7878` | 7878 |
+| prowlarr | `http://100.x.x.x:9696` | 9696 |
+| **gluetun** (qBittorrent + Prowlarr) | `http://100.x.x.x:8080` / `:9696` | 8080 / 9696 |
+| plex | `https://plex.yourdomain.com` | via Cloudflare Tunnel |
+
+> **Important:** qBittorrent and Prowlarr share Gluetun's network stack — ports are published on **gluetun**. Sonarr/Radarr reach Prowlarr at `gluetun:9696`.
+
+Seerr (`http://100.x.x.x:5055`) is the primary entry point for content requests on Tailscale.
+
+Do not set `container_name` on any service. Dokploy relies on auto-generated names for logs and metrics.
+
+### 5. Cloudflare Tunnel (Plex)
+
+Plex is exposed via **cloudflared on the deploy host** (not a container). The compose file publishes Plex on `127.0.0.1:32400` so only localhost can reach it.
+
+1. Ensure `cloudflared` is installed and running on the deploy host (e.g. `systemctl status cloudflared`).
+2. In **Cloudflare Zero Trust** → your tunnel → **Public Hostname**, set the service URL to `http://127.0.0.1:32400`.
+3. In Plex → **Settings → Network**: disable **Remote Access**, set **Custom server access URLs** to `https://plex.yourdomain.com`.
+
+## Post-deploy configuration
+
+Complete these steps once after the first successful deploy.
+
+### Plex
+
+1. Generate a claim token at https://plex.tv/claim and set `PLEX_CLAIM` in your environment, then redeploy (token expires in 4 minutes).
+2. Open the Plex web UI (via Cloudflare hostname or Tailscale if you add a temporary port) and complete account setup.
+3. Add libraries:
+   - **Movies** → `/data/media/movies`
+   - **TV Shows** → `/data/media/tv`
+4. Disable native **Remote Access**; use the Cloudflare custom URL instead.
+
+### qBittorrent
+
+On first start, `qbittorrent-init/10-configure-paths.sh` (mounted via compose) automatically:
+
+- Sets the default save path to `/data/torrents` and incomplete path to `/data/torrents/incomplete`
+- Enables **Bypass authentication for clients on localhost** (required for Gluetun port-forward sync)
+- Creates `torrents/{movies,tv,incomplete}` under the `/data` mount
+
+Manual steps after deploy:
+
+1. Find the temporary `admin` password in the container logs:
+   ```bash
+   docker logs <qbittorrent-container-id>
+   ```
+2. Log in at `http://<BIND_IP>:8080` and change the username and password immediately.
+3. Under **Settings → Downloads**, confirm default save path is `/data/torrents` (should already be set).
+4. Under **Settings → Connection**, confirm **UPnP** is disabled (default in the linuxserver image).
+
+Gluetun (`PORT_FORWARD_ONLY=on`) selects PIA servers that support port forwarding and automatically updates qBittorrent's listening port when a port is assigned. The compose file also sets a 10s stop grace period so redeploys do not abruptly kill active downloads.
+
+### Prowlarr
+
+1. Open **Settings → General** → set **Prowlarr Server URL** to `http://gluetun:9696` (so Sonarr/Radarr sync uses the correct address).
+2. Open **Settings → Indexers → Indexer Proxies** → add **FlareSolverr**:
+   - Host: `http://127.0.0.1:8191`
+   - Tag: `flaresolverr` (create the tag if prompted)
+3. Open **Settings → Indexers** and add your torrent indexers. For Cloudflare-protected sites (e.g. **1337x**), apply the `flaresolverr` tag to the indexer.
+4. Open **Settings → Apps** and add:
+   - **Sonarr** — URL: `http://sonarr:8989`
+   - **Radarr** — URL: `http://radarr:7878`
+5. Use Prowlarr's sync feature to push indexers to Sonarr and Radarr.
+
+### Sonarr
+
+1. **Settings → Download Clients** → add qBittorrent:
+   - Host: `gluetun`
+   - Port: `8080`
+   - Category: `tv`
+   - Enter the username and password you set in qBittorrent
+2. **Settings → Media Management**:
+   - Enable **Use Hardlinks instead of Copy**
+3. **Settings → Media Management → Root Folders** → add `/data/media/tv`
+
+### Radarr
+
+1. **Settings → Download Clients** → add qBittorrent:
+   - Host: `gluetun`
+   - Port: `8080`
+   - Category: `movies`
+   - Enter the username and password you set in qBittorrent
+2. **Settings → Media Management**:
+   - Enable **Use Hardlinks instead of Copy**
+3. **Settings → Media Management → Root Folders** → add `/data/media/movies`
+
+### Seerr
+
+1. **Claim Plex first** (Seerr cannot connect to an unclaimed server). Open `http://<BIND_IP>:32400/web` on Tailscale and sign in with your Plex account, **or** set a fresh `PLEX_CLAIM` token and redeploy within 4 minutes.
+2. Open Seerr at `http://<BIND_IP>:5055` and sign in with **Plex**.
+3. When prompted to connect your Plex server, select it from the list. If entering manually, use `http://plex:32400` (**HTTP**, not HTTPS).
+4. Add Sonarr:
+   - Hostname: `sonarr`
+   - Port: `8989`
+   - API key: from Sonarr → Settings → General
+5. Add Radarr:
+   - Hostname: `radarr`
+   - Port: `7878`
+   - API key: from Radarr → Settings → General
+
+#### Migrating from Overseerr
+
+If upgrading from a previous Overseerr deployment, back up and copy config before the first Seerr deploy:
+
+```bash
+cp -a ${CONFIG_ROOT}/overseerr ${CONFIG_ROOT}/overseerr.backup-$(date +%Y%m%d)
+cp -a ${CONFIG_ROOT}/overseerr ${CONFIG_ROOT}/seerr
+chown -R 1000:1000 ${CONFIG_ROOT}/seerr
+```
+
+Seerr auto-migrates the Overseerr database on first startup. Check logs with `docker logs <seerr-container-id>` and verify the UI before deleting the old `overseerr` folder. See the [Seerr migration guide](https://docs.seerr.dev/migration-guide/).
+
+## Security
+
+- **VPN kill switch** — `network_mode: service:gluetun` on qBittorrent, Prowlarr, and FlareSolverr ensures they cannot reach the internet without an active VPN connection.
+- **Scoped credentials** — PIA credentials are only passed to the Gluetun container.
+- **Tailscale-only admin UIs** — Ports bind to `${BIND_IP}` (Tailscale address), not `0.0.0.0`.
+- **Plex via Cloudflare Tunnel** — Host `cloudflared` forwards to `127.0.0.1:32400`; no public bind on Tailscale or LAN.
+- **Authentication** — Set strong passwords on qBittorrent, Sonarr, Radarr, and Prowlarr (Settings → General in each app).
+- **Prowlarr exposure** — Only reachable on Tailscale; not exposed to the public internet.
+- **PIA port forwarding** — Use non-US `SERVER_REGIONS`. Compose sets `PORT_FORWARD_ONLY=on` so Gluetun only connects to PIA servers that support forwarding.
+- **Same filesystem** — Keep `torrents/` and `media/` on the same volume so hardlinks work and seeding continues after import.
+
+## Maintenance
+
+### Update containers
+
+Redeploy from Dokploy, or on the deploy host:
+
+```bash
+cd /etc/dokploy/compose/<stack-id>/code
+docker compose pull
+docker compose up -d
+```
+
+linuxserver.io recommends pulling updated images manually rather than using auto-updaters like Watchtower.
+
+### Backup
+
+Back up `${CONFIG_ROOT}` regularly. It contains all application databases, settings, and API keys. Media files are re-downloadable; configuration is not.
+
+### Verify VPN is active
+
+Check that qBittorrent's reported IP differs from your real IP:
+
+```bash
+docker exec <gluetun-container-id> wget -qO- https://api.ipify.org
+```
+
+Compare with your home IP. They should not match.
+
+## Troubleshooting
+
+### Cannot reach admin UI from Tailscale
+
+- Confirm `BIND_IP` matches the deploy host's Tailscale address: `tailscale ip -4`.
+- Verify the port is listening: `ss -tlnp | grep <port>` on the deploy host.
+- Ensure your client is on the same Tailscale network.
+
+### qBittorrent cannot be reached by Sonarr/Radarr
+
+- Confirm Sonarr/Radarr use host `gluetun` (not `qbittorrent` / `prowlarr`) and ports `8080` / `9696`.
+- Verify `FIREWALL_OUTBOUND_SUBNETS` in Gluetun includes your Docker network and Tailscale range. Adjust `LAN_SUBNET` / `DOCKER_SUBNET` in `.env` if needed.
+- Confirm `FIREWALL_INPUT_PORTS` includes `${WEBUI_PORT}` and `${PROWLARR_PORT}` on the gluetun service.
+
+### VPN container is unhealthy
+
+- Check Gluetun logs: `docker logs <gluetun-container-id>`
+- Verify PIA credentials and `SERVER_REGIONS` spelling.
+- Ensure `/dev/net/tun` is available on the host.
+
+### Port forwarding not working
+
+- Confirm `VPN_PORT_FORWARDING=on` and `SERVER_REGIONS` lists non-US regions (see `.env.example`).
+- Compose sets `PORT_FORWARD_ONLY=on` on Gluetun — do not remove it.
+- Ensure qBittorrent has **Bypass authentication for clients on localhost** enabled (the init script sets this automatically).
+- Check Gluetun logs for port-forward assignment messages: `docker logs <gluetun-container-id> 2>&1 | grep -i port`
+
+### Permission errors on downloads or imports
+
+- Ensure `MEDIA_ROOT` and `CONFIG_ROOT` are owned by `PUID:PGID`.
+- All linuxserver containers must use the same `PUID` and `PGID`.
+- Confirm qBittorrent's save path is `/data/torrents`, not `/downloads`. The init script in `qbittorrent-init/` enforces this on every start; if you deployed before that script existed, redeploy from the current compose file.
+
+### Plex cannot see media
+
+- Verify libraries point to `/data/media/movies` and `/data/media/tv` (container paths, not host paths).
+- Confirm files exist on the host under `${MEDIA_ROOT}/media/`.
+- Check that Sonarr/Radarr have successfully imported at least one file.
+
+### Cloudflare Tunnel not reaching Plex
+
+- Confirm Plex is listening on localhost: `ss -tlnp | grep 32400` on the deploy host.
+- In Cloudflare, the tunnel service URL must be `http://127.0.0.1:32400` (not `http://plex:32400` — that hostname only exists inside Docker).
+- Check host cloudflared: `systemctl status cloudflared` and `journalctl -u cloudflared -n 50`.
+
+### Indexer fails with Cloudflare error
+
+- Confirm FlareSolverr is running: `docker ps --filter name=flaresolverr`
+- In Prowlarr, add an **Indexer Proxy** for FlareSolverr at `http://127.0.0.1:8191` and tag Cloudflare-protected indexers (e.g. 1337x) with `flaresolverr`.
+- Test FlareSolverr from the gluetun namespace: `docker exec <gluetun-container-id> wget -qO- --post-data='{"cmd":"request.get","url":"https://1337x.to","maxTimeout":60000}' --header='Content-Type: application/json' http://127.0.0.1:8191/v1`
+- If FlareSolverr times out, try a different `SERVER_REGIONS` value — some PIA exit nodes are blocked by Cloudflare.
+
+## References
+
+- [linuxserver.io images](https://www.linuxserver.io/our-images)
+- [Seerr Docker docs](https://docs.seerr.dev/getting-started/docker/)
+- [Seerr migration guide](https://docs.seerr.dev/migration-guide/)
+- [Gluetun wiki — PIA setup](https://github.com/qdm12/gluetun-wiki/blob/main/setup/providers/private-internet-access.md)
+- [Gluetun wiki — VPN port forwarding](https://github.com/qdm12/gluetun-wiki/blob/main/setup/advanced/vpn-port-forwarding.md)
+- [Dokploy Docker Compose docs](https://docs.dokploy.com/docs/core/docker-compose/example)
+- [Cloudflare Tunnel docs](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
+- [TRaSH Guides](https://trash-guides.info/) — recommended quality profiles and folder structure

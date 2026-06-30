@@ -1,0 +1,39 @@
+---
+description: Keep README.md in sync when docker-compose or env files change
+globs: docker-compose.yml,.env,.env.example
+alwaysApply: false
+---
+
+# README sync for infrastructure changes
+
+When you create or modify `docker-compose.yml`, `.env`, or `.env.example`, update `README.md` in the **same task** before finishing. Do not leave the README out of date.
+
+## Required workflow
+
+1. Make the infrastructure change.
+2. Review `README.md` against the new state.
+3. Update every affected section (do not append a changelog — integrate changes into existing sections).
+4. If `.env.example` changed, ensure the Environment variables table and inline examples match.
+
+## Section mapping
+
+| Change type | README sections to update |
+|-------------|---------------------------|
+| Service added/removed/renamed | Overview, Container images, Architecture diagram, Dokploy domains table, Post-deploy configuration |
+| Image tag or image source changed | Container images |
+| Port or `WEBUI_PORT` changed | Dokploy domains table, Post-deploy configuration, Architecture diagram labels |
+| Volume or mount path changed | Storage layout, Post-deploy configuration, Troubleshooting |
+| Network / VPN / Gluetun config changed | Architecture, Security, Troubleshooting, Post-deploy configuration |
+| New or removed env var | Environment variables table; `.env.example` comments if present |
+| `MEDIA_ROOT` / `CONFIG_ROOT` layout changed | Storage layout, directory setup commands |
+
+## Consistency rules
+
+- README must describe the **current** stack only — remove docs for deleted services.
+- Use the same service names, ports, paths, and variable names as in `docker-compose.yml` and `.env.example`.
+- Never put real secrets in README; reference `.env` / `.env.example` for credential placeholders.
+- Update the mermaid diagram when services or key connections change.
+
+## Example
+
+Adding Bazarr to `docker-compose.yml` requires updating: Overview table, Container images row, Architecture diagram node, domains table (port 6767), and a new Post-deploy configuration subsection for Bazarr.
