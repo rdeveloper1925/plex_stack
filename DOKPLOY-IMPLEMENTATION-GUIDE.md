@@ -1,6 +1,6 @@
 # Dokploy Implementation Guide
 
-Step-by-step instructions to deploy the Plex + *arr media stack on [Dokploy](https://dokploy.com). Complete each phase in order.
+Step-by-step instructions to deploy the Jellyfin + *arr media stack on [Dokploy](https://dokploy.com). Complete each phase in order.
 
 For architecture overview, security notes, and troubleshooting, see [README.md](README.md).
 
@@ -15,9 +15,8 @@ This guide assumes a **primary Dokploy** instance deploying to a **remote server
 - [ ] Primary Dokploy installed and connected to the deploy target
 - [ ] [Tailscale](https://tailscale.com/) running on the deploy host
 - [ ] [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) installed on the deploy host
-- [ ] A domain in Cloudflare (for the Plex tunnel only)
+- [ ] A domain in Cloudflare (`mattapps.org` — for the Jellyfin tunnel only)
 - [ ] PIA VPN subscription with username and password
-- [ ] Plex account
 - [ ] Enough disk space on a **single filesystem** for media + downloads (hardlinks require this)
 
 ### What you will configure
@@ -28,7 +27,7 @@ This guide assumes a **primary Dokploy** instance deploying to a **remote server
 | 2. Configure environment | 10 min |
 | 3. Create Dokploy project | 10 min |
 | 4. First deploy | 5–15 min |
-| 5. Cloudflare Tunnel (Plex) | 10 min |
+| 5. Cloudflare Tunnel (Jellyfin) | 10 min |
 | 6. Verify VPN | 5 min |
 | 7. Configure applications | 30–60 min |
 
@@ -67,7 +66,7 @@ export PGID=1000                           # change to your gid
 
 mkdir -p ${MEDIA_ROOT}/torrents/{movies,tv,incomplete}
 mkdir -p ${MEDIA_ROOT}/media/{movies,tv}
-mkdir -p ${CONFIG_ROOT}/{plex,sonarr,radarr,prowlarr,seerr,qbittorrent,gluetun}
+mkdir -p ${CONFIG_ROOT}/{jellyfin,sonarr,radarr,prowlarr,seerr,qbittorrent,gluetun}
 
 chown -R ${PUID}:${PGID} ${MEDIA_ROOT} ${CONFIG_ROOT}
 ```
@@ -80,7 +79,7 @@ On the deploy host:
 tailscale ip -4
 ```
 
-Save this as `BIND_IP` — admin UIs will listen only on this address.
+Save this as `BIND_IP` — admin UIs (except Jellyfin) will listen only on this address. Use your Tailscale IP (`tailscale ip -4`) or LAN IP depending on how you reach the deploy host privately.
 
 ### Step 1.5 — Confirm VPN support
 
@@ -127,8 +126,8 @@ BIND_IP=100.x.x.x
 LAN_SUBNET=192.168.1.0/24,100.64.0.0/10
 DOCKER_SUBNET=10.0.0.0/8
 
-# --- Plex ---
-PLEX_CLAIM=
+# --- Jellyfin ---
+JELLYFIN_PUBLISHED_SERVER_URL=https://movies.mattapps.org
 
 # --- qBittorrent ---
 WEBUI_PORT=8080
@@ -147,7 +146,7 @@ PROWLARR_PORT=9696
 | `SERVER_REGIONS` | Comma-separated **non-US** PIA regions; compose sets `PORT_FORWARD_ONLY=on` |
 | `LAN_SUBNET` | Your LAN CIDR **and** `100.64.0.0/10` (Tailscale), comma-separated |
 | `DOCKER_SUBNET` | Leave as `10.0.0.0/8` unless Gluetun blocks inter-container traffic |
-| `PLEX_CLAIM` | Leave empty for now — set in Phase 4 |
+| `JELLYFIN_PUBLISHED_SERVER_URL` | `https://movies.mattapps.org` (Cloudflare Tunnel public hostname) |
 | `WEBUI_PORT` | Leave as `8080` unless you have a conflict |
 | `PROWLARR_PORT` | Leave as `9696` unless you have a conflict |
 
@@ -205,27 +204,21 @@ chown -R 1000:1000 ${CONFIG_ROOT}/seerr
 
 Seerr auto-migrates the Overseerr database on first startup. Skip this step for fresh installs — just ensure `${CONFIG_ROOT}/seerr` exists with correct permissions.
 
-### Step 4.2 — Claim Plex (time-sensitive)
-
-1. Open https://plex.tv/claim in your browser.
-2. Copy the claim token.
-3. Set `PLEX_CLAIM=<token>` in Dokploy Environment **immediately**.
-4. Token expires in **4 minutes** — deploy right after setting it.
-
-### Step 4.3 — Deploy
+### Step 4.2 — Deploy
 
 1. Click **Deploy** in Dokploy.
 2. Watch the build/deploy logs.
-3. Wait until all 7 containers are running:
+3. Wait until all containers are running:
    - `gluetun`
    - `qbittorrent`
-   - `plex`
+   - `jellyfin`
    - `sonarr`
    - `radarr`
    - `prowlarr`
+   - `flaresolverr`
    - `seerr`
 
-### Step 4.4 — Confirm Gluetun is healthy
+### Step 4.3 — Confirm Gluetun is healthy
 
 On the deploy host:
 
@@ -235,7 +228,7 @@ docker ps --filter "name=gluetun"
 
 Status should be **healthy**.
 
-### Step 4.5 — Confirm Tailscale port bindings
+### Step 4.4 — Confirm Tailscale port bindings
 
 On the deploy host:
 
@@ -243,17 +236,13 @@ On the deploy host:
 ss -tlnp | grep 100.
 ```
 
-You should see ports **5055**, **8989**, **7878**, **9696**, and **8080** bound to your `BIND_IP`.
-
-### Step 4.6 — Clear Plex claim (optional)
-
-After Plex links to your account, remove `PLEX_CLAIM` from the environment and redeploy.
+You should see ports **5055**, **8989**, **7878**, **9696**, and **8080** bound to your `BIND_IP`. Jellyfin is **not** on `BIND_IP` — it listens on `127.0.0.1:8096` only.
 
 ---
 
-## Phase 5: Cloudflare Tunnel (Plex only)
+## Phase 5: Cloudflare Tunnel (Jellyfin only)
 
-Plex public access uses **cloudflared on the deploy host** — not a Docker container. The stack publishes Plex on `127.0.0.1:32400` for the host tunnel to forward.
+Jellyfin public access uses **cloudflared on the deploy host** — not a Docker container. The stack publishes Jellyfin on `127.0.0.1:8096` for the host tunnel to forward.
 
 ### Step 5.1 — Confirm host cloudflared
 
@@ -271,29 +260,28 @@ In **Cloudflare Zero Trust** → your tunnel → **Public Hostname**:
 
 | Field | Value |
 |-------|-------|
-| Subdomain | `plex` (or your choice) |
-| Domain | `yourdomain.com` |
+| Hostname | `movies.mattapps.org` |
 | Service type | HTTP |
-| URL | `http://127.0.0.1:32400` |
+| URL | `http://127.0.0.1:8096` (**HTTP only** — not `https://`) |
 
-> Use `127.0.0.1`, not `plex` — the Docker hostname is not resolvable from the host.
+> Use `127.0.0.1`, not `jellyfin` — the Docker hostname is not resolvable from the host.
 
-### Step 5.3 — Verify Plex is reachable locally
+### Step 5.3 — Verify Jellyfin is reachable locally
 
 On the deploy host:
 
 ```bash
-ss -tlnp | grep 32400
-curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:32400/web
+ss -tlnp | grep 8096
+curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8096
 ```
 
-Should show Plex listening on `127.0.0.1:32400` and return `200` or `301`.
+Should show Jellyfin listening on `127.0.0.1:8096` and return `200` or `302`.
 
-### Step 5.4 — Configure Plex
+### Step 5.4 — Configure Jellyfin
 
-1. Open Plex via `https://plex.yourdomain.com`.
-2. **Settings → Network** → disable **Remote Access**.
-3. **Settings → Network** → **Custom server access URLs**: `https://plex.yourdomain.com`.
+1. Open **https://movies.mattapps.org**.
+2. Complete the setup wizard (create a local admin account).
+3. **Dashboard → Networking** → set **Published Server URL** to `https://movies.mattapps.org` (must match `JELLYFIN_PUBLISHED_SERVER_URL`).
 
 ---
 
@@ -319,16 +307,16 @@ You should see a forwarded port assigned. If you see `API IP address not found`,
 
 ## Phase 7: Configure applications
 
-Access each service at `http://<BIND_IP>:<port>` from a device on your Tailscale network.
+Access admin services at `http://<BIND_IP>:<port>` from your private network. Jellyfin is public only at **https://movies.mattapps.org**.
 
 | Service | URL |
 |---------|-----|
-| Seerr | `http://100.x.x.x:5055` |
-| Sonarr | `http://100.x.x.x:8989` |
-| Radarr | `http://100.x.x.x:7878` |
-| Prowlarr | `http://100.x.x.x:9696` |
-| qBittorrent | `http://100.x.x.x:8080` |
-| Plex | `https://plex.yourdomain.com` |
+| Seerr | `http://<BIND_IP>:5055` |
+| Sonarr | `http://<BIND_IP>:8989` |
+| Radarr | `http://<BIND_IP>:7878` |
+| Prowlarr | `http://<BIND_IP>:9696` |
+| qBittorrent | `http://<BIND_IP>:8080` |
+| Jellyfin | `https://movies.mattapps.org` |
 
 Configure in this order — later steps depend on earlier ones.
 
@@ -387,23 +375,26 @@ URL: `http://<BIND_IP>:7878`
    - Host: `gluetun`, Port: `8080`, Category: `movies`
 5. Return to Prowlarr and complete Radarr app sync.
 
-### Step 7.5 — Plex
+### Step 7.5 — Jellyfin
 
-URL: `https://plex.yourdomain.com`
+URL: `https://movies.mattapps.org`
 
-1. Complete Plex setup wizard (account linked via `PLEX_CLAIM`).
-2. **Settings → Manage → Libraries** → add `/data/media/movies` and `/data/media/tv`.
-3. Disable native Remote Access; use Cloudflare custom URL.
+1. Complete Jellyfin setup wizard (create local admin account).
+2. **Dashboard → Libraries** → add `/data/media/movies` and `/data/media/tv`.
+3. **Dashboard → Networking** → confirm **Published Server URL** is `https://movies.mattapps.org`.
 
 ### Step 7.6 — Seerr
 
 URL: `http://<BIND_IP>:5055`
 
-1. Sign in with **Plex**.
+1. **Settings → Jellyfin**:
+   - Internal URL: `http://jellyfin:8096`
+   - External URL: `https://movies.mattapps.org`
+   - Jellyfin admin username and password
 2. **Settings → Services → Sonarr** — hostname `sonarr`, port `8989`.
 3. **Settings → Services → Radarr** — hostname `radarr`, port `7878`.
 
-If migrating from Overseerr, check container logs for migration success:
+If migrating from Overseerr or switching from another media server, you may need to reset media server settings or clear `${CONFIG_ROOT}/seerr` and reconfigure. Check container logs for migration success:
 
 ```bash
 docker logs $(docker ps -q --filter "name=seerr") 2>&1 | tail -50
@@ -417,7 +408,7 @@ docker logs $(docker ps -q --filter "name=seerr") 2>&1 | tail -50
 2. [ ] Radarr shows the movie as wanted / starts searching.
 3. [ ] qBittorrent receives a torrent and downloads over VPN.
 4. [ ] Radarr imports to `/data/media/movies`.
-5. [ ] Plex shows the new movie (via Cloudflare URL).
+5. [ ] Jellyfin shows the new movie at `https://movies.mattapps.org`.
 6. [ ] Repeat with a TV show via Sonarr.
 
 ---
@@ -427,14 +418,14 @@ docker logs $(docker ps -q --filter "name=seerr") 2>&1 | tail -50
 | Item | Done |
 |------|------|
 | Admin UIs reachable on Tailscale (`BIND_IP:port`) | ☐ |
-| Plex reachable via Cloudflare Tunnel | ☐ |
+| Jellyfin reachable at `https://movies.mattapps.org` | ☐ |
 | No Dokploy Traefik domains assigned | ☐ |
 | Gluetun container healthy | ☐ |
 | VPN IP differs from server IP | ☐ |
 | qBittorrent password changed | ☐ |
 | Sonarr/Radarr/Prowlarr authentication enabled | ☐ |
-| Plex Remote Access disabled; custom URL set | ☐ |
-| Seerr connected to Plex, Sonarr, Radarr | ☐ |
+| Jellyfin Published Server URL set to `https://movies.mattapps.org` | ☐ |
+| Seerr connected to Jellyfin, Sonarr, Radarr | ☐ |
 | `${CONFIG_ROOT}` backup scheduled | ☐ |
 
 ---
@@ -449,10 +440,13 @@ docker logs $(docker ps -q --filter "name=seerr") 2>&1 | tail -50
 | Sonarr / Radarr | Prowlarr | `gluetun:9696` |
 | Prowlarr | Sonarr | `sonarr:8989` |
 | Prowlarr | Radarr | `radarr:7878` |
+| Seerr | Jellyfin | `jellyfin:8096` |
 | Seerr | Sonarr | `sonarr:8989` |
 | Seerr | Radarr | `radarr:7878` |
 
 ### Tailscale access URLs
+
+Admin UIs bind to `${BIND_IP}`. Jellyfin is excluded — use `https://movies.mattapps.org`.
 
 | Service | Port |
 |---------|------|

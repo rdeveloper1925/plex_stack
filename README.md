@@ -1,15 +1,15 @@
-# Plex + *arr Media Stack
+# Jellyfin + *arr Media Stack
 
 A self-hosted media automation stack deployed via Docker Compose on [Dokploy](https://dokploy.com). Torrent downloads are routed exclusively through a PIA VPN kill switch; everything else runs on the normal Docker network for reliability.
 
-**Plex** is the only service exposed to the internet (via Cloudflare Tunnel). All admin UIs bind to the deploy host's Tailscale IP and are not routed through Dokploy Traefik.
+**Jellyfin** is the only service exposed to the internet, at **https://movies.mattapps.org** via a host Cloudflare Tunnel. All other admin UIs bind to `${BIND_IP}` (your deploy host's private IP) and are not routed through Dokploy Traefik.
 
 ## Overview
 
 | Service | Role |
 |---------|------|
 | **Seerr** | Search and request movies/TV shows |
-| **Plex** | Stream your library (public via host Cloudflare Tunnel) |
+| **Jellyfin** | Stream your library (public at `https://movies.mattapps.org` via Cloudflare Tunnel) |
 | **Sonarr** | Automate TV show downloads and organization |
 | **Radarr** | Automate movie downloads and organization |
 | **Prowlarr** | Central indexer manager for Sonarr and Radarr |
@@ -19,14 +19,14 @@ A self-hosted media automation stack deployed via Docker Compose on [Dokploy](ht
 
 ## Architecture
 
-Only **qBittorrent**, **Prowlarr**, and **FlareSolverr** route through the VPN. Sonarr, Radarr, Plex, and Seerr stay on the normal Docker network so inter-app APIs stay reliable. Gluetun provides a built-in kill switch: if the VPN drops, VPN-routed containers lose all network access.
+Only **qBittorrent**, **Prowlarr**, and **FlareSolverr** route through the VPN. Sonarr, Radarr, Jellyfin, and Seerr stay on the normal Docker network so inter-app APIs stay reliable. Gluetun provides a built-in kill switch: if the VPN drops, VPN-routed containers lose all network access.
 
-Admin UIs publish ports on `${BIND_IP}` (the deploy host's Tailscale address). **Plex** also binds to `127.0.0.1:32400` for the host `cloudflared` service.
+Admin UIs for Seerr, Sonarr, Radarr, Prowlarr, and qBittorrent publish ports on `${BIND_IP}` (Tailscale or LAN IP). **Jellyfin** binds only to `127.0.0.1:8096` for the host `cloudflared` service — it is not reachable on `${BIND_IP}`.
 
 ```mermaid
 flowchart TB
-    Internet --> CF[Host_cloudflared]
-    CF -->|"127.0.0.1:32400"| Plex
+    Internet -->|"movies.mattapps.org"| CF[Host_cloudflared]
+    CF -->|"127.0.0.1:8096"| Jellyfin
 
     Admin[Browser_on_Tailscale] --> Seerr
     Admin --> Sonarr
@@ -34,7 +34,7 @@ flowchart TB
     Admin --> Prowlarr
     Admin -->|"BIND_IP:8080"| Gluetun
 
-    Seerr --> Plex
+    Seerr --> Jellyfin
     Seerr --> Sonarr
     Seerr --> Radarr
 
@@ -60,7 +60,7 @@ flowchart TB
 3. A matching torrent is sent to **qBittorrent** (reachable at `gluetun:8080` on the Docker network).
 4. **qBittorrent** downloads the file through the **PIA VPN** tunnel managed by **Gluetun**.
 5. On completion, Sonarr/Radarr import the file into your library using a **hardlink** (no duplicate disk usage).
-6. **Plex** picks up the new file and makes it available to stream.
+6. **Jellyfin** picks up the new file and makes it available to stream.
 
 ## Project files
 
@@ -76,7 +76,7 @@ flowchart TB
 
 | Service | Image | Notes |
 |---------|-------|-------|
-| Plex | `lscr.io/linuxserver/plex:latest` | `127.0.0.1:32400` for cloudflared; `${BIND_IP}:32400` for Tailscale admin |
+| Jellyfin | `lscr.io/linuxserver/jellyfin:latest` | `127.0.0.1:8096` only (cloudflared); public at `https://movies.mattapps.org` |
 | qBittorrent | `lscr.io/linuxserver/qbittorrent:latest` | libtorrent v2 |
 | Sonarr | `lscr.io/linuxserver/sonarr:latest` | |
 | Radarr | `lscr.io/linuxserver/radarr:latest` | |
@@ -91,10 +91,9 @@ All application images use [linuxserver.io](https://www.linuxserver.io/our-image
 
 - A [Dokploy](https://dokploy.com) instance (primary) with a remote deploy target running Docker Compose
 - [Tailscale](https://tailscale.com/) on the deploy host (for private admin UI access)
-- [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) installed on the deploy host (for Plex public access)
-- A domain managed in Cloudflare (for the Plex tunnel)
+- [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) installed on the deploy host (for Jellyfin public access)
+- A domain managed in Cloudflare (for the Jellyfin tunnel)
 - An active [Private Internet Access](https://www.privateinternetaccess.com/) subscription
-- A [Plex](https://www.plex.tv/) account
 - Sufficient disk space for media and downloads on the same filesystem (required for hardlinks)
 
 ## Storage layout
@@ -107,11 +106,11 @@ ${MEDIA_ROOT}/
     movies/
     tv/
   media/
-    movies/              # Radarr final library (Plex movies)
-    tv/                  # Sonarr final library (Plex TV)
+    movies/              # Radarr final library
+    tv/                  # Sonarr final library
 
 ${CONFIG_ROOT}/
-  plex/
+  jellyfin/
   sonarr/
   radarr/
   prowlarr/
@@ -134,7 +133,7 @@ export PGID=1000
 
 mkdir -p ${MEDIA_ROOT}/torrents/{movies,tv,incomplete}
 mkdir -p ${MEDIA_ROOT}/media/{movies,tv}
-mkdir -p ${CONFIG_ROOT}/{plex,sonarr,radarr,prowlarr,seerr,qbittorrent,gluetun}
+mkdir -p ${CONFIG_ROOT}/{jellyfin,sonarr,radarr,prowlarr,seerr,qbittorrent,gluetun}
 
 chown -R ${PUID}:${PGID} ${MEDIA_ROOT} ${CONFIG_ROOT}
 ```
@@ -156,14 +155,14 @@ cp .env.example .env
 | `TZ` | Timezone | `America/New_York` |
 | `MEDIA_ROOT` | Absolute path to media and downloads on the host | `/mnt/media` |
 | `CONFIG_ROOT` | Absolute path to app config on the host | `/mnt/config` |
-| `BIND_IP` | Tailscale IP to bind admin UI ports (`tailscale ip -4`) | `100.x.x.x` |
+| `BIND_IP` | Private IP to bind admin UI ports (Tailscale `tailscale ip -4` or LAN IP). Jellyfin is excluded. | `100.x.x.x` or `192.168.x.x` |
 | `OPENVPN_USER` | PIA username | `p1234567` |
 | `OPENVPN_PASSWORD` | PIA password | |
-| `SERVER_REGIONS` | Comma-separated PIA regions (non-US; used with `PORT_FORWARD_ONLY` in compose) | `Netherlands,CA Toronto` |
+| `SERVER_REGIONS` | Comma-separated PIA regions with reliable port forwarding (used with `PORT_FORWARD_ONLY` in compose) | `Switzerland,Netherlands,CA Toronto,CA Montreal` |
 | `VPN_PORT_FORWARDING` | Enable PIA port forwarding in Gluetun | `on` |
 | `LAN_SUBNET` | LAN + Tailscale CIDRs for Gluetun firewall (comma-separated) | `192.168.1.0/24,100.64.0.0/10` |
 | `DOCKER_SUBNET` | Docker network CIDR (Gluetun firewall allowlist) | `10.0.0.0/8` |
-| `PLEX_CLAIM` | Plex claim token from https://plex.tv/claim | |
+| `JELLYFIN_PUBLISHED_SERVER_URL` | Public Jellyfin URL (Cloudflare Tunnel hostname) | `https://movies.mattapps.org` |
 | `WEBUI_PORT` | qBittorrent web UI port | `8080` |
 | `PROWLARR_PORT` | Prowlarr web UI port (published on gluetun) | `9696` |
 
@@ -183,7 +182,7 @@ This stack is designed for a **remote deploy target** (secondary server) managed
 
 ### 2. Set environment variables
 
-Paste all values from your `.env` file into the Dokploy **Environment** tab. Set `BIND_IP` to the deploy host's Tailscale address (`tailscale ip -4` on that host).
+Paste all values from your `.env` file into the Dokploy **Environment** tab. Set `BIND_IP` to the deploy host's private IP (Tailscale `tailscale ip -4` or LAN address). Set `JELLYFIN_PUBLISHED_SERVER_URL=https://movies.mattapps.org`.
 
 ### 3. Deploy
 
@@ -191,43 +190,45 @@ Click **Deploy**. Dokploy will pull images, create containers, and attach them t
 
 ### 4. Do not assign Dokploy domains
 
-**Skip the Domains tab** for all services in this stack. Admin UIs are reached at `http://${BIND_IP}:<port>` over Tailscale. Plex is reached via your Cloudflare Tunnel hostname.
+**Skip the Domains tab** for all services in this stack. Admin UIs are reached at `http://${BIND_IP}:<port>` on your private network. Jellyfin is reached only at **https://movies.mattapps.org** (Cloudflare Tunnel).
 
-| Service | Tailscale URL | Port |
-|---------|---------------|------|
-| **seerr** | `http://100.x.x.x:5055` | 5055 |
-| sonarr | `http://100.x.x.x:8989` | 8989 |
-| radarr | `http://100.x.x.x:7878` | 7878 |
-| prowlarr | `http://100.x.x.x:9696` | 9696 |
-| **gluetun** (qBittorrent + Prowlarr) | `http://100.x.x.x:8080` / `:9696` | 8080 / 9696 |
-| plex | `https://plex.yourdomain.com` | via Cloudflare Tunnel |
+| Service | Access URL | Port |
+|---------|------------|------|
+| **seerr** | `http://${BIND_IP}:5055` | 5055 |
+| sonarr | `http://${BIND_IP}:8989` | 8989 |
+| radarr | `http://${BIND_IP}:7878` | 7878 |
+| prowlarr | `http://${BIND_IP}:9696` | 9696 |
+| **gluetun** (qBittorrent + Prowlarr) | `http://${BIND_IP}:8080` / `:9696` | 8080 / 9696 |
+| jellyfin | `https://movies.mattapps.org` | via Cloudflare Tunnel only |
 
 > **Important:** qBittorrent and Prowlarr share Gluetun's network stack — ports are published on **gluetun**. Sonarr/Radarr reach Prowlarr at `gluetun:9696`.
 
-Seerr (`http://100.x.x.x:5055`) is the primary entry point for content requests on Tailscale.
+Seerr (`http://${BIND_IP}:5055`) is the primary entry point for content requests on your private network.
 
 Do not set `container_name` on any service. Dokploy relies on auto-generated names for logs and metrics.
 
-### 5. Cloudflare Tunnel (Plex)
+### 5. Cloudflare Tunnel (Jellyfin)
 
-Plex is exposed via **cloudflared on the deploy host** (not a container). The compose file publishes Plex on `127.0.0.1:32400` so only localhost can reach it.
+Jellyfin is exposed via **cloudflared on the deploy host** (not a Docker container). The compose file publishes Jellyfin on `127.0.0.1:8096` only so the host tunnel can forward traffic without exposing Jellyfin on your private IP.
 
 1. Ensure `cloudflared` is installed and running on the deploy host (e.g. `systemctl status cloudflared`).
-2. In **Cloudflare Zero Trust** → your tunnel → **Public Hostname**, set the service URL to `http://127.0.0.1:32400`.
-3. In Plex → **Settings → Network**: disable **Remote Access**, set **Custom server access URLs** to `https://plex.yourdomain.com`.
+2. In **Cloudflare Zero Trust** → your tunnel → **Public Hostname**:
+   - Hostname: `movies.mattapps.org`
+   - Service URL: `http://127.0.0.1:8096` (**HTTP**, not HTTPS — Jellyfin does not speak TLS on port 8096)
+3. Set `JELLYFIN_PUBLISHED_SERVER_URL=https://movies.mattapps.org` in Dokploy Environment and redeploy.
+4. In Jellyfin → **Dashboard → Networking**: confirm **Published Server URL** is `https://movies.mattapps.org`.
 
 ## Post-deploy configuration
 
 Complete these steps once after the first successful deploy.
 
-### Plex
+### Jellyfin
 
-1. Generate a claim token at https://plex.tv/claim and set `PLEX_CLAIM` in your environment, then redeploy (token expires in 4 minutes).
-2. Open the Plex web UI (via Cloudflare hostname or Tailscale if you add a temporary port) and complete account setup.
-3. Add libraries:
+1. Open **https://movies.mattapps.org** and complete the setup wizard (create a local admin account).
+2. Add libraries:
    - **Movies** → `/data/media/movies`
    - **TV Shows** → `/data/media/tv`
-4. Disable native **Remote Access**; use the Cloudflare custom URL instead.
+3. **Dashboard → Networking** → confirm **Published Server URL** is `https://movies.mattapps.org`.
 
 ### qBittorrent
 
@@ -236,6 +237,8 @@ On first start, `qbittorrent-init/10-configure-paths.sh` (mounted via compose) a
 - Sets the default save path to `/data/torrents` and incomplete path to `/data/torrents/incomplete`
 - Enables **Bypass authentication for clients on localhost** (required for Gluetun port-forward sync)
 - Creates `torrents/{movies,tv,incomplete}` under the `/data` mount
+
+`qbittorrent-init/20-sync-forwarded-port.sh` runs in the background on every start and retries syncing Gluetun's forwarded port into qBittorrent for up to 10 minutes (covers the race where Gluetun assigns a port before the Web UI is ready).
 
 Manual steps after deploy:
 
@@ -247,7 +250,7 @@ Manual steps after deploy:
 3. Under **Settings → Downloads**, confirm default save path is `/data/torrents` (should already be set).
 4. Under **Settings → Connection**, confirm **UPnP** is disabled (default in the linuxserver image).
 
-Gluetun (`PORT_FORWARD_ONLY=on`) selects PIA servers that support port forwarding and automatically updates qBittorrent's listening port when a port is assigned. The compose file also sets a 10s stop grace period so redeploys do not abruptly kill active downloads.
+Gluetun (`PORT_FORWARD_ONLY=on`) selects PIA servers that support port forwarding and automatically updates qBittorrent's listening port when a port is assigned. A shared Docker volume (`gluetun-runtime`) exposes the forwarded port file to qBittorrent; the init script retries the sync if Gluetun beats the Web UI on startup. The compose file also sets a 10s stop grace period so redeploys do not abruptly kill active downloads.
 
 ### Prowlarr
 
@@ -285,9 +288,12 @@ Gluetun (`PORT_FORWARD_ONLY=on`) selects PIA servers that support port forwardin
 
 ### Seerr
 
-1. **Claim Plex first** (Seerr cannot connect to an unclaimed server). Open `http://<BIND_IP>:32400/web` on Tailscale and sign in with your Plex account, **or** set a fresh `PLEX_CLAIM` token and redeploy within 4 minutes.
-2. Open Seerr at `http://<BIND_IP>:5055` and sign in with **Plex**.
-3. When prompted to connect your Plex server, select it from the list. If entering manually, use `http://plex:32400` (**HTTP**, not HTTPS).
+1. **Set up Jellyfin first** (admin account and libraries configured).
+2. Open Seerr at `http://<BIND_IP>:5055`.
+3. In **Settings → Jellyfin**:
+   - Internal URL: `http://jellyfin:8096` (**HTTP**, not HTTPS)
+   - External URL: `https://movies.mattapps.org`
+   - Admin username and password from Jellyfin setup
 4. Add Sonarr:
    - Hostname: `sonarr`
    - Port: `8989`
@@ -296,6 +302,8 @@ Gluetun (`PORT_FORWARD_ONLY=on`) selects PIA servers that support port forwardin
    - Hostname: `radarr`
    - Port: `7878`
    - API key: from Radarr → Settings → General
+
+> If Seerr was previously configured for another media server, reset media server settings in the Seerr UI or clear `${CONFIG_ROOT}/seerr` and reconfigure.
 
 #### Migrating from Overseerr
 
@@ -314,8 +322,8 @@ Seerr auto-migrates the Overseerr database on first startup. Check logs with `do
 - **VPN kill switch** — `network_mode: service:gluetun` on qBittorrent, Prowlarr, and FlareSolverr ensures they cannot reach the internet without an active VPN connection.
 - **Scoped credentials** — PIA credentials are only passed to the Gluetun container.
 - **Tailscale-only admin UIs** — Ports bind to `${BIND_IP}` (Tailscale address), not `0.0.0.0`.
-- **Plex via Cloudflare Tunnel** — Host `cloudflared` forwards to `127.0.0.1:32400`; no public bind on Tailscale or LAN.
-- **Authentication** — Set strong passwords on qBittorrent, Sonarr, Radarr, and Prowlarr (Settings → General in each app).
+- **Jellyfin via Cloudflare Tunnel** — Host `cloudflared` forwards `movies.mattapps.org` to `127.0.0.1:8096`; Jellyfin is not bound on `${BIND_IP}`.
+- **Authentication** — Set strong passwords on qBittorrent, Sonarr, Radarr, Prowlarr, and Jellyfin.
 - **Prowlarr exposure** — Only reachable on Tailscale; not exposed to the public internet.
 - **PIA port forwarding** — Use non-US `SERVER_REGIONS`. Compose sets `PORT_FORWARD_ONLY=on` so Gluetun only connects to PIA servers that support forwarding.
 - **Same filesystem** — Keep `torrents/` and `media/` on the same volume so hardlinks work and seeding continues after import.
@@ -370,10 +378,15 @@ Compare with your home IP. They should not match.
 
 ### Port forwarding not working
 
-- Confirm `VPN_PORT_FORWARDING=on` and `SERVER_REGIONS` lists non-US regions (see `.env.example`).
+- Confirm `VPN_PORT_FORWARDING=on` and `SERVER_REGIONS` lists reliable non-US PIA regions (see `.env.example`).
+- Prefer `Switzerland`, `Netherlands`, `CA Toronto`, and `CA Montreal` — exotic regions often fail Gluetun's PIA port-forward API lookup.
 - Compose sets `PORT_FORWARD_ONLY=on` on Gluetun — do not remove it.
 - Ensure qBittorrent has **Bypass authentication for clients on localhost** enabled (the init script sets this automatically).
+- After restart, confirm a forwarded port was assigned: `docker exec <gluetun-container-id> cat /tmp/gluetun/forwarded_port`
+- Confirm qBittorrent's listen port updated from the default `6881` in **Settings → Connection**.
 - Check Gluetun logs for port-forward assignment messages: `docker logs <gluetun-container-id> 2>&1 | grep -i port`
+- The `20-sync-forwarded-port.sh` init script retries syncing the port for up to 10 minutes after each qBittorrent start.
+- A host cron job (`scripts/retry-pia-portforward.sh`) restarts Gluetun every 10 minutes when no forwarded port is assigned, rotating PIA servers until one works.
 
 ### Permission errors on downloads or imports
 
@@ -381,17 +394,31 @@ Compare with your home IP. They should not match.
 - All linuxserver containers must use the same `PUID` and `PGID`.
 - Confirm qBittorrent's save path is `/data/torrents`, not `/downloads`. The init script in `qbittorrent-init/` enforces this on every start; if you deployed before that script existed, redeploy from the current compose file.
 
-### Plex cannot see media
+### Jellyfin cannot see media
 
 - Verify libraries point to `/data/media/movies` and `/data/media/tv` (container paths, not host paths).
 - Confirm files exist on the host under `${MEDIA_ROOT}/media/`.
 - Check that Sonarr/Radarr have successfully imported at least one file.
 
-### Cloudflare Tunnel not reaching Plex
+### Cloudflare Tunnel not reaching Jellyfin (502 Bad Gateway)
 
-- Confirm Plex is listening on localhost: `ss -tlnp | grep 32400` on the deploy host.
-- In Cloudflare, the tunnel service URL must be `http://127.0.0.1:32400` (not `http://plex:32400` — that hostname only exists inside Docker).
-- Check host cloudflared: `systemctl status cloudflared` and `journalctl -u cloudflared -n 50`.
+**Common cause:** Tunnel origin set to `https://localhost:8096` instead of `http://127.0.0.1:8096`. Jellyfin serves plain HTTP; cloudflared logs show `tls: first record does not look like a TLS handshake`.
+
+**Fix in Cloudflare Zero Trust** → Networks → Tunnels → your tunnel → Public Hostname `movies.mattapps.org`:
+- Service URL must be **`http://127.0.0.1:8096`** (not `https://`)
+
+Or run locally (requires API token with Cloudflare Tunnel Write):
+
+```bash
+export CLOUDFLARE_API_TOKEN=your_token
+./scripts/fix-cloudflare-jellyfin-origin.sh
+```
+
+**Verify locally on deploy host:**
+- Confirm Jellyfin is listening: `ss -tlnp | grep 8096`
+- Confirm HTTP works: `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8096/` (expect `302`)
+- In Cloudflare, the tunnel service URL must be `http://127.0.0.1:8096` (not `http://jellyfin:8096` — that hostname only exists inside Docker).
+- Check host cloudflared: `systemctl status cloudflared` and `journalctl -u cloudflared -n 50 | grep -iE "error|origin"'
 
 ### Indexer fails with Cloudflare error
 
