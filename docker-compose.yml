@@ -20,6 +20,7 @@ services:
       - VPN_PORT_FORWARDING_DOWN_COMMAND=/bin/sh -c 'wget -O- -nv --tries=3 --retry-connrefused --post-data "json={\"listen_port\":0,\"current_network_interface\":\"lo\"}" http://127.0.0.1:${WEBUI_PORT}/api/v2/app/setPreferences'
     volumes:
       - ${CONFIG_ROOT}/gluetun:/gluetun
+      - gluetun-runtime:/tmp/gluetun
     ports:
       - "${BIND_IP}:${WEBUI_PORT}:${WEBUI_PORT}/tcp"
       - "${BIND_IP}:${PROWLARR_PORT}:${PROWLARR_PORT}/tcp"
@@ -46,6 +47,7 @@ services:
     volumes:
       - ${CONFIG_ROOT}/qbittorrent:/config
       - ${MEDIA_ROOT}:/data
+      - gluetun-runtime:/gluetun-runtime:ro
       - ./qbittorrent-init:/config/custom-cont-init.d:ro
     stop_grace_period: 10s
     restart: unless-stopped
@@ -143,3 +145,6 @@ services:
 networks:
   dokploy-network:
     external: true
+
+volumes:
+  gluetun-runtime:

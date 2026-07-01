@@ -158,7 +158,7 @@ cp .env.example .env
 | `BIND_IP` | Private IP to bind admin UI ports (Tailscale `tailscale ip -4` or LAN IP). Jellyfin is excluded. | `100.x.x.x` or `192.168.x.x` |
 | `OPENVPN_USER` | PIA username | `p1234567` |
 | `OPENVPN_PASSWORD` | PIA password | |
-| `SERVER_REGIONS` | Comma-separated PIA regions (non-US; used with `PORT_FORWARD_ONLY` in compose) | `Netherlands,CA Toronto` |
+| `SERVER_REGIONS` | Comma-separated PIA regions with reliable port forwarding (used with `PORT_FORWARD_ONLY` in compose) | `Switzerland,Netherlands,CA Toronto,CA Montreal` |
 | `VPN_PORT_FORWARDING` | Enable PIA port forwarding in Gluetun | `on` |
 | `LAN_SUBNET` | LAN + Tailscale CIDRs for Gluetun firewall (comma-separated) | `192.168.1.0/24,100.64.0.0/10` |
 | `DOCKER_SUBNET` | Docker network CIDR (Gluetun firewall allowlist) | `10.0.0.0/8` |
@@ -238,6 +238,8 @@ On first start, `qbittorrent-init/10-configure-paths.sh` (mounted via compose) a
 - Enables **Bypass authentication for clients on localhost** (required for Gluetun port-forward sync)
 - Creates `torrents/{movies,tv,incomplete}` under the `/data` mount
 
+`qbittorrent-init/20-sync-forwarded-port.sh` runs in the background on every start and retries syncing Gluetun's forwarded port into qBittorrent for up to 10 minutes (covers the race where Gluetun assigns a port before the Web UI is ready).
+
 Manual steps after deploy:
 
 1. Find the temporary `admin` password in the container logs:
@@ -248,7 +250,7 @@ Manual steps after deploy:
 3. Under **Settings → Downloads**, confirm default save path is `/data/torrents` (should already be set).
 4. Under **Settings → Connection**, confirm **UPnP** is disabled (default in the linuxserver image).
 
-Gluetun (`PORT_FORWARD_ONLY=on`) selects PIA servers that support port forwarding and automatically updates qBittorrent's listening port when a port is assigned. The compose file also sets a 10s stop grace period so redeploys do not abruptly kill active downloads.
+Gluetun (`PORT_FORWARD_ONLY=on`) selects PIA servers that support port forwarding and automatically updates qBittorrent's listening port when a port is assigned. A shared Docker volume (`gluetun-runtime`) exposes the forwarded port file to qBittorrent; the init script retries the sync if Gluetun beats the Web UI on startup. The compose file also sets a 10s stop grace period so redeploys do not abruptly kill active downloads.
 
 ### Prowlarr
 
@@ -376,10 +378,15 @@ Compare with your home IP. They should not match.
 
 ### Port forwarding not working
 
-- Confirm `VPN_PORT_FORWARDING=on` and `SERVER_REGIONS` lists non-US regions (see `.env.example`).
+- Confirm `VPN_PORT_FORWARDING=on` and `SERVER_REGIONS` lists reliable non-US PIA regions (see `.env.example`).
+- Prefer `Switzerland`, `Netherlands`, `CA Toronto`, and `CA Montreal` — exotic regions often fail Gluetun's PIA port-forward API lookup.
 - Compose sets `PORT_FORWARD_ONLY=on` on Gluetun — do not remove it.
 - Ensure qBittorrent has **Bypass authentication for clients on localhost** enabled (the init script sets this automatically).
+- After restart, confirm a forwarded port was assigned: `docker exec <gluetun-container-id> cat /tmp/gluetun/forwarded_port`
+- Confirm qBittorrent's listen port updated from the default `6881` in **Settings → Connection**.
 - Check Gluetun logs for port-forward assignment messages: `docker logs <gluetun-container-id> 2>&1 | grep -i port`
+- The `20-sync-forwarded-port.sh` init script retries syncing the port for up to 10 minutes after each qBittorrent start.
+- A host cron job (`scripts/retry-pia-portforward.sh`) restarts Gluetun every 10 minutes when no forwarded port is assigned, rotating PIA servers until one works.
 
 ### Permission errors on downloads or imports
 
