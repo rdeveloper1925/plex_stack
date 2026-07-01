@@ -158,7 +158,7 @@ cp .env.example .env
 | `BIND_IP` | Private IP to bind admin UI ports (Tailscale `tailscale ip -4` or LAN IP). Jellyfin is excluded. | `100.x.x.x` or `192.168.x.x` |
 | `OPENVPN_USER` | PIA username | `p1234567` |
 | `OPENVPN_PASSWORD` | PIA password | |
-| `SERVER_REGIONS` | Comma-separated PIA regions with reliable port forwarding (used with `PORT_FORWARD_ONLY` in compose) | `Switzerland,Netherlands,CA Toronto,CA Montreal` |
+| `SERVER_REGIONS` | Comma-separated PIA regions with port forwarding (from PIA serverlist API; used with `PORT_FORWARD_ONLY` in compose) | see `.env.example` |
 | `VPN_PORT_FORWARDING` | Enable PIA port forwarding in Gluetun | `on` |
 | `LAN_SUBNET` | LAN + Tailscale CIDRs for Gluetun firewall (comma-separated) | `192.168.1.0/24,100.64.0.0/10` |
 | `DOCKER_SUBNET` | Docker network CIDR (Gluetun firewall allowlist) | `10.0.0.0/8` |
@@ -325,7 +325,7 @@ Seerr auto-migrates the Overseerr database on first startup. Check logs with `do
 - **Jellyfin via Cloudflare Tunnel** — Host `cloudflared` forwards `movies.mattapps.org` to `127.0.0.1:8096`; Jellyfin is not bound on `${BIND_IP}`.
 - **Authentication** — Set strong passwords on qBittorrent, Sonarr, Radarr, Prowlarr, and Jellyfin.
 - **Prowlarr exposure** — Only reachable on Tailscale; not exposed to the public internet.
-- **PIA port forwarding** — Use non-US `SERVER_REGIONS`. Compose sets `PORT_FORWARD_ONLY=on` so Gluetun only connects to PIA servers that support forwarding.
+- **PIA port forwarding** — `SERVER_REGIONS` lists all PIA regions with port forwarding support. Compose sets `PORT_FORWARD_ONLY=on` so Gluetun only connects to PIA servers that support forwarding.
 - **Same filesystem** — Keep `torrents/` and `media/` on the same volume so hardlinks work and seeding continues after import.
 
 ## Maintenance
@@ -378,8 +378,8 @@ Compare with your home IP. They should not match.
 
 ### Port forwarding not working
 
-- Confirm `VPN_PORT_FORWARDING=on` and `SERVER_REGIONS` lists reliable non-US PIA regions (see `.env.example`).
-- Prefer `Switzerland`, `Netherlands`, `CA Toronto`, and `CA Montreal` — exotic regions often fail Gluetun's PIA port-forward API lookup.
+- Confirm `VPN_PORT_FORWARDING=on` and `SERVER_REGIONS` lists all PIA port-forward regions (see `.env.example`).
+- If forwarding fails on one region, Gluetun rotates through the list; exotic regions may still fail Gluetun's PIA port-forward API lookup.
 - Compose sets `PORT_FORWARD_ONLY=on` on Gluetun — do not remove it.
 - Ensure qBittorrent has **Bypass authentication for clients on localhost** enabled (the init script sets this automatically).
 - After restart, confirm a forwarded port was assigned: `docker exec <gluetun-container-id> cat /tmp/gluetun/forwarded_port`
