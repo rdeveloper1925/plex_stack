@@ -39,6 +39,7 @@ services:
     depends_on:
       gluetun:
         condition: service_healthy
+        restart: true
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
@@ -104,6 +105,7 @@ services:
     depends_on:
       gluetun:
         condition: service_healthy
+        restart: true
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
@@ -118,6 +120,7 @@ services:
     depends_on:
       gluetun:
         condition: service_healthy
+        restart: true
     environment:
       - LOG_LEVEL=info
       - TZ=${TZ}

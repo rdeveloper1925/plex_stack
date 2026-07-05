@@ -319,7 +319,7 @@ Seerr auto-migrates the Overseerr database on first startup. Check logs with `do
 
 ## Security
 
-- **VPN kill switch** — `network_mode: service:gluetun` on qBittorrent, Prowlarr, and FlareSolverr ensures they cannot reach the internet without an active VPN connection.
+- **VPN kill switch** — `network_mode: service:gluetun` on qBittorrent, Prowlarr, and FlareSolverr ensures they cannot reach the internet without an active VPN connection. Those sidecars use `depends_on` with `restart: true` so Compose restarts them when Gluetun is recreated (otherwise their ports stop responding until manually restarted).
 - **Scoped credentials** — PIA credentials are only passed to the Gluetun container.
 - **Tailscale-only admin UIs** — Ports bind to `${BIND_IP}` (Tailscale address), not `0.0.0.0`.
 - **Jellyfin via Cloudflare Tunnel** — Host `cloudflared` forwards `movies.mattapps.org` to `127.0.0.1:8096`; Jellyfin is not bound on `${BIND_IP}`.
@@ -363,6 +363,14 @@ Compare with your home IP. They should not match.
 - Confirm `BIND_IP` matches the deploy host's Tailscale address: `tailscale ip -4`.
 - Verify the port is listening: `ss -tlnp | grep <port>` on the deploy host.
 - Ensure your client is on the same Tailscale network.
+
+### Prowlarr or qBittorrent UI unreachable after Gluetun restart
+
+Gluetun sidecars share its network namespace. If Gluetun restarted but qBittorrent, Prowlarr, or FlareSolverr did not, their published ports accept connections but nothing listens inside Gluetun.
+
+- Check uptime mismatch: `docker ps --format "table {{.Names}}\t{{.Status}}" | grep -E "gluetun|qbittorrent|prowlarr|flaresolverr"`.
+- Confirm nothing is listening: `docker exec <gluetun-container-id> netstat -tlnp | grep -E "8080|9696"`.
+- Redeploy from Dokploy (compose sets `depends_on.restart: true` on the sidecars), or restart manually: `docker restart <qbittorrent-container-id> <prowlarr-container-id> <flaresolverr-container-id>`.
 
 ### qBittorrent cannot be reached by Sonarr/Radarr
 
