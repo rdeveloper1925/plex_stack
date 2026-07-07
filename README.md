@@ -235,6 +235,7 @@ Complete these steps once after the first successful deploy.
 On first start, `qbittorrent-init/10-configure-paths.sh` (mounted via compose) automatically:
 
 - Sets the default save path to `/data/torrents` and incomplete path to `/data/torrents/incomplete`
+- Routes category **`tv`** downloads to `/data/torrents/tv` and **`movies`** to `/data/torrents/movies` (Sonarr/Radarr import from these into `/data/media/tv` and `/data/media/movies`)
 - Enables **Bypass authentication for clients on localhost** (required for Gluetun port-forward sync)
 - Creates `torrents/{movies,tv,incomplete}` under the `/data` mount
 
@@ -247,7 +248,7 @@ Manual steps after deploy:
    docker logs <qbittorrent-container-id>
    ```
 2. Log in at `http://<BIND_IP>:8080` and change the username and password immediately.
-3. Under **Settings → Downloads**, confirm default save path is `/data/torrents` (should already be set).
+3. Under **Settings → Downloads**, confirm default save path is `/data/torrents` and categories **`tv`** / **`movies`** point to `/data/torrents/tv` and `/data/torrents/movies` (should already be set).
 4. Under **Settings → Connection**, confirm **UPnP** is disabled (default in the linuxserver image).
 
 Gluetun (`PORT_FORWARD_ONLY=on`) selects PIA servers that support port forwarding and automatically updates qBittorrent's listening port when a port is assigned. A shared Docker volume (`gluetun-runtime`) exposes the forwarded port file to qBittorrent; the init script retries the sync if Gluetun beats the Web UI on startup. The compose file also sets a 10s stop grace period so redeploys do not abruptly kill active downloads.
@@ -394,7 +395,7 @@ Gluetun sidecars share its network namespace. If Gluetun restarted but qBittorre
 - Confirm qBittorrent's listen port updated from the default `6881` in **Settings → Connection**.
 - Check Gluetun logs for port-forward assignment messages: `docker logs <gluetun-container-id> 2>&1 | grep -i port`
 - The `20-sync-forwarded-port.sh` init script retries syncing the port for up to 10 minutes after each qBittorrent start.
-- A host cron job (`scripts/retry-pia-portforward.sh`) restarts Gluetun every 10 minutes when no forwarded port is assigned, rotating PIA servers until one works.
+- A host cron job (`scripts/retry-pia-portforward.sh`) restarts Gluetun and its sidecars (qBittorrent, Prowlarr, FlareSolverr) every 10 minutes when no forwarded port is assigned, rotating PIA servers until one works.
 
 ### Permission errors on downloads or imports
 

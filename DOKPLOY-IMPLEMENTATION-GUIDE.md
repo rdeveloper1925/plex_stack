@@ -324,7 +324,7 @@ Configure in this order — later steps depend on earlier ones.
 
 URL: `http://<BIND_IP>:8080`
 
-The compose file mounts `qbittorrent-init/10-configure-paths.sh`, which on every start sets save path `/data/torrents`, incomplete path `/data/torrents/incomplete`, and enables localhost auth bypass for Gluetun.
+The compose file mounts `qbittorrent-init/` to `/custom-cont-init.d`, which on every start sets save path `/data/torrents`, incomplete path `/data/torrents/incomplete`, category **`tv`** → `/data/torrents/tv`, category **`movies`** → `/data/torrents/movies`, and enables localhost auth bypass for Gluetun.
 
 1. Get the temporary password from logs:
    ```bash

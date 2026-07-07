@@ -30,8 +30,8 @@ if ! docker logs "${GLUETUN_CONTAINER}" 2>&1 | tail -30 | grep -q "port forwardi
 fi
 
 touch "${LOCK_FILE}"
-logger -t pia-portforward "No forwarded port on ${GLUETUN_CONTAINER}; restarting Gluetun"
+logger -t pia-portforward "No forwarded port on ${GLUETUN_CONTAINER}; restarting Gluetun sidecars"
 cd "${COMPOSE_DIR}"
 docker compose -p "${COMPOSE_PROJECT}" restart gluetun
 sleep 35
-docker compose -p "${COMPOSE_PROJECT}" restart qbittorrent
+docker compose -p "${COMPOSE_PROJECT}" restart qbittorrent prowlarr flaresolverr

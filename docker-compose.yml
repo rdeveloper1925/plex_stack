@@ -49,7 +49,7 @@ services:
       - ${CONFIG_ROOT}/qbittorrent:/config
       - ${MEDIA_ROOT}:/data
       - gluetun-runtime:/gluetun-runtime:ro
-      - ./qbittorrent-init:/config/custom-cont-init.d:ro
+      - ./qbittorrent-init:/custom-cont-init.d:ro
     stop_grace_period: 10s
     restart: unless-stopped
 
