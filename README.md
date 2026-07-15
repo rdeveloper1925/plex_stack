@@ -76,16 +76,16 @@ flowchart TB
 
 | Service | Image | Notes |
 |---------|-------|-------|
-| Jellyfin | `lscr.io/linuxserver/jellyfin:latest` | `127.0.0.1:8096` only (cloudflared); public at `https://movies.mattapps.org` |
-| qBittorrent | `lscr.io/linuxserver/qbittorrent:latest` | libtorrent v2 |
-| Sonarr | `lscr.io/linuxserver/sonarr:latest` | |
-| Radarr | `lscr.io/linuxserver/radarr:latest` | |
-| Prowlarr | `lscr.io/linuxserver/prowlarr:latest` | VPN-routed via `network_mode: service:gluetun` |
-| FlareSolverr | `ghcr.io/flaresolverr/flaresolverr:latest` | VPN-routed; Prowlarr reaches it at `http://127.0.0.1:8191` |
-| Seerr | `ghcr.io/seerr-team/seerr:latest` | Config at `/app/config`; runs as UID 1000 |
-| Gluetun | `qmcgaw/gluetun:latest` | PIA OpenVPN client and kill switch |
+| Jellyfin | `lscr.io/linuxserver/jellyfin:10.11.11ubu2404-ls39` | `127.0.0.1:8096` only (cloudflared); public at `https://movies.mattapps.org` |
+| qBittorrent | `lscr.io/linuxserver/qbittorrent:5.2.2_v2.0.13-ls464` | libtorrent v2 |
+| Sonarr | `lscr.io/linuxserver/sonarr:4.0.19.2979-ls316` | |
+| Radarr | `lscr.io/linuxserver/radarr:6.2.1.10461-ls308` | |
+| Prowlarr | `lscr.io/linuxserver/prowlarr:2.4.0.5397-ls151` | VPN-routed via `network_mode: service:gluetun` |
+| FlareSolverr | `ghcr.io/flaresolverr/flaresolverr:v3.5.0` | VPN-routed; Prowlarr reaches it at `http://127.0.0.1:8191` |
+| Seerr | `ghcr.io/seerr-team/seerr:v3.3.0` | Config at `/app/config`; runs as UID 1000 |
+| Gluetun | `qmcgaw/gluetun:latest@sha256:b0ee2135e6ba52ad3f102aae9663707cd1c9531485117067a380d3b2b6dd991d` | PIA OpenVPN client and kill switch (pinned by digest) |
 
-All application images use [linuxserver.io](https://www.linuxserver.io/our-images) where available. Seerr and Gluetun are the exceptions.
+All application images use [linuxserver.io](https://www.linuxserver.io/our-images) where available. Seerr and Gluetun are the exceptions. Image tags are pinned to specific versions for reproducible deployments; Gluetun is pinned by digest because it only publishes a rolling `latest` tag. Bump these tags deliberately rather than relying on `latest`.
 
 ## Prerequisites
 
@@ -333,7 +333,7 @@ Seerr auto-migrates the Overseerr database on first startup. Check logs with `do
 
 ### Update containers
 
-Redeploy from Dokploy, or on the deploy host:
+Images are pinned to specific version tags (Gluetun by digest), so `docker compose pull` will **not** upgrade them. To update, bump the tag in `docker-compose.yml` (see [Container images](#container-images)) to the desired version, then redeploy from Dokploy, or on the deploy host:
 
 ```bash
 cd /etc/dokploy/compose/<stack-id>/code

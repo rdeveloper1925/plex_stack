@@ -1,6 +1,6 @@
 services:
   gluetun:
-    image: qmcgaw/gluetun:latest
+    image: qmcgaw/gluetun:latest@sha256:b0ee2135e6ba52ad3f102aae9663707cd1c9531485117067a380d3b2b6dd991d
     cap_add:
       - NET_ADMIN
     devices:
@@ -34,7 +34,7 @@ services:
     restart: unless-stopped
 
   qbittorrent:
-    image: lscr.io/linuxserver/qbittorrent:latest
+    image: lscr.io/linuxserver/qbittorrent:5.2.2_v2.0.13-ls464
     network_mode: service:gluetun
     depends_on:
       gluetun:
@@ -54,7 +54,7 @@ services:
     restart: unless-stopped
 
   jellyfin:
-    image: lscr.io/linuxserver/jellyfin:latest
+    image: lscr.io/linuxserver/jellyfin:10.11.11ubu2404-ls39
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
@@ -70,7 +70,7 @@ services:
     restart: unless-stopped
 
   sonarr:
-    image: lscr.io/linuxserver/sonarr:latest
+    image: lscr.io/linuxserver/sonarr:4.0.19.2979-ls316
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
@@ -85,7 +85,7 @@ services:
     restart: unless-stopped
 
   radarr:
-    image: lscr.io/linuxserver/radarr:latest
+    image: lscr.io/linuxserver/radarr:6.2.1.10461-ls308
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
@@ -100,7 +100,7 @@ services:
     restart: unless-stopped
 
   prowlarr:
-    image: lscr.io/linuxserver/prowlarr:latest
+    image: lscr.io/linuxserver/prowlarr:2.4.0.5397-ls151
     network_mode: service:gluetun
     depends_on:
       gluetun:
@@ -115,7 +115,7 @@ services:
     restart: unless-stopped
 
   flaresolverr:
-    image: ghcr.io/flaresolverr/flaresolverr:latest
+    image: ghcr.io/flaresolverr/flaresolverr:v3.5.0
     network_mode: service:gluetun
     depends_on:
       gluetun:
@@ -127,7 +127,7 @@ services:
     restart: unless-stopped
 
   seerr:
-    image: ghcr.io/seerr-team/seerr:latest
+    image: ghcr.io/seerr-team/seerr:v3.3.0
     init: true
     environment:
       - TZ=${TZ}
