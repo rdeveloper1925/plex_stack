@@ -155,12 +155,12 @@ cp .env.example .env
 | `TZ` | Timezone | `America/New_York` |
 | `MEDIA_ROOT` | Absolute path to media and downloads on the host | `/mnt/media` |
 | `CONFIG_ROOT` | Absolute path to app config on the host | `/mnt/config` |
-| `BIND_IP` | Private IP to bind admin UI ports (Tailscale `tailscale ip -4` or LAN IP). Jellyfin is excluded. | `100.x.x.x` or `192.168.x.x` |
+| `BIND_IP` | Bind address for admin UI ports. `0.0.0.0` exposes on all interfaces (LAN + Tailscale); a specific private IP (Tailscale `tailscale ip -4` or LAN IP) restricts access. Jellyfin is excluded. | `0.0.0.0` or `192.168.x.x` |
 | `OPENVPN_USER` | PIA username | `p1234567` |
 | `OPENVPN_PASSWORD` | PIA password | |
 | `SERVER_REGIONS` | Comma-separated PIA regions with port forwarding (from PIA serverlist API; used with `PORT_FORWARD_ONLY` in compose) | see `.env.example` |
 | `VPN_PORT_FORWARDING` | Enable PIA port forwarding in Gluetun | `on` |
-| `LAN_SUBNET` | LAN + Tailscale CIDRs for Gluetun firewall (comma-separated) | `192.168.1.0/24,100.64.0.0/10` |
+| `LAN_SUBNET` | LAN + Tailscale CIDRs for Gluetun firewall (comma-separated) | `192.168.2.0/24,100.64.0.0/10` |
 | `DOCKER_SUBNET` | Docker network CIDR (Gluetun firewall allowlist) | `10.0.0.0/8` |
 | `JELLYFIN_PUBLISHED_SERVER_URL` | Public Jellyfin URL (Cloudflare Tunnel hostname) | `https://movies.mattapps.org` |
 | `WEBUI_PORT` | qBittorrent web UI port | `8080` |
@@ -322,7 +322,7 @@ Seerr auto-migrates the Overseerr database on first startup. Check logs with `do
 
 - **VPN kill switch** — `network_mode: service:gluetun` on qBittorrent, Prowlarr, and FlareSolverr ensures they cannot reach the internet without an active VPN connection. Those sidecars use `depends_on` with `restart: true` so Compose restarts them when Gluetun is recreated (otherwise their ports stop responding until manually restarted).
 - **Scoped credentials** — PIA credentials are only passed to the Gluetun container.
-- **Tailscale-only admin UIs** — Ports bind to `${BIND_IP}` (Tailscale address), not `0.0.0.0`.
+- **Admin UI bind address** — Ports bind to `${BIND_IP}`. Set to `0.0.0.0` to reach UIs on both the LAN and Tailscale (ensure each app has authentication enabled), or a specific Tailscale/LAN IP to restrict exposure.
 - **Jellyfin via Cloudflare Tunnel** — Host `cloudflared` forwards `movies.mattapps.org` to `127.0.0.1:8096`; Jellyfin is not bound on `${BIND_IP}`.
 - **Authentication** — Set strong passwords on qBittorrent, Sonarr, Radarr, Prowlarr, and Jellyfin.
 - **Prowlarr exposure** — Only reachable on Tailscale; not exposed to the public internet.
