@@ -1,0 +1,19 @@
+---
+description: SSH access details for remote home and cloud servers, with first-use permission gate
+alwaysApply: true
+---
+
+# Remote Server SSH Access
+
+When the user mentions their remote home server, home server, or similar terms (e.g., home-svr, home server, local server at home, 192.168.2.210), the agent can access it via either:
+- ssh -p 2222 matt@home-svr
+- ssh -p 2222 matt@192.168.2.210
+
+When the user mentions their remote cloud server, cloud server, or similar terms (e.g., mattapps, cloud server), the agent can access it via:
+- ssh -p 2222 matt@mattapps
+
+## Permission required (first use per thread)
+
+Before running SSH or executing any command on either server for the **first time in the current conversation thread**, the agent MUST ask the user for explicit permission. Do not connect to these servers without approval, even if the user mentions them in passing or implies they want work done there.
+
+After the user has explicitly granted permission in the current thread, subsequent SSH access to that same server in the same thread does not require asking again — unless the user revokes permission or the action is destructive (e.g., deleting data, modifying production config, restarting critical services).
