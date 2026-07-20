@@ -124,7 +124,7 @@ VPN_PORT_FORWARDING=on
 # --- Network / access ---
 BIND_IP=100.x.x.x
 LAN_SUBNET=192.168.1.0/24,100.64.0.0/10
-DOCKER_SUBNET=10.0.0.0/8
+DOCKER_SUBNET=10.0.1.0/24,172.16.0.0/12
 
 # --- Jellyfin ---
 JELLYFIN_PUBLISHED_SERVER_URL=https://movies.mattapps.org
@@ -145,7 +145,7 @@ PROWLARR_PORT=9696
 | `OPENVPN_USER` / `OPENVPN_PASSWORD` | PIA credentials |
 | `SERVER_REGIONS` | Comma-separated **non-US** PIA regions; compose sets `PORT_FORWARD_ONLY=on` |
 | `LAN_SUBNET` | Your LAN CIDR **and** `100.64.0.0/10` (Tailscale), comma-separated |
-| `DOCKER_SUBNET` | Leave as `10.0.0.0/8` unless Gluetun blocks inter-container traffic |
+| `DOCKER_SUBNET` | Overlay + bridge CIDRs only (e.g. `10.0.1.0/24,172.16.0.0/12`). Do **not** use `10.0.0.0/8` — it breaks PIA port forwarding |
 | `JELLYFIN_PUBLISHED_SERVER_URL` | `https://movies.mattapps.org` (Cloudflare Tunnel public hostname) |
 | `WEBUI_PORT` | Leave as `8080` unless you have a conflict |
 | `PROWLARR_PORT` | Leave as `9696` unless you have a conflict |
@@ -253,6 +253,10 @@ systemctl status cloudflared
 ```
 
 If not installed, follow [Cloudflare's Linux install guide](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/).
+
+Ensure the unit uses a generous start timeout (home-svr uses `TimeoutStartSec=60` in `/etc/systemd/system/cloudflared.service`). The stock 15s timeout can fail when the tunnel is slow to come up after host routing issues.
+
+**Gluetun must stay on `dokploy-network` with port mappings** — do not use `network_mode: host` for Gluetun; host-mode VPN routes break cloudflared.
 
 ### Step 5.2 — Configure public hostname
 

@@ -1,7 +1,6 @@
 services:
   gluetun:
-    image: qmcgaw/gluetun:latest
-    network_mode: host
+    image: qmcgaw/gluetun:latest@sha256:b0ee2135e6ba52ad3f102aae9663707cd1c9531485117067a380d3b2b6dd991d
     cap_add:
       - NET_ADMIN
     devices:
@@ -15,14 +14,18 @@ services:
       - PORT_FORWARD_ONLY=on
       - VPN_PORT_FORWARDING=${VPN_PORT_FORWARDING}
       - FIREWALL_OUTBOUND_SUBNETS=${LAN_SUBNET},${DOCKER_SUBNET}
-      - FIREWALL_INPUT_PORTS=${WEBUI_PORT},${PROWLARR_PORT},2222
+      - FIREWALL_INPUT_PORTS=${WEBUI_PORT},${PROWLARR_PORT}
       - TZ=${TZ}
       - VPN_PORT_FORWARDING_UP_COMMAND=/bin/sh -c 'wget -O- -nv --tries=10 --waitretry=5 --retry-connrefused --post-data "json={\"listen_port\":{{PORT}},\"current_network_interface\":\"{{VPN_INTERFACE}}\",\"random_port\":false,\"upnp\":false}" http://127.0.0.1:${WEBUI_PORT}/api/v2/app/setPreferences'
       - VPN_PORT_FORWARDING_DOWN_COMMAND=/bin/sh -c 'wget -O- -nv --tries=3 --retry-connrefused --post-data "json={\"listen_port\":0,\"current_network_interface\":\"lo\"}" http://127.0.0.1:${WEBUI_PORT}/api/v2/app/setPreferences'
     volumes:
       - ${CONFIG_ROOT}/gluetun:/gluetun
-      - ${CONFIG_ROOT}/gluetun/iptables:/iptables:ro
       - gluetun-runtime:/tmp/gluetun
+    ports:
+      - "${BIND_IP}:${WEBUI_PORT}:${WEBUI_PORT}/tcp"
+      - "${BIND_IP}:${PROWLARR_PORT}:${PROWLARR_PORT}/tcp"
+    networks:
+      - dokploy-network
     healthcheck:
       test: ["CMD", "/gluetun-entrypoint", "healthcheck"]
       interval: 30s
