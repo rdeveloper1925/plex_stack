@@ -160,7 +160,7 @@ cp .env.example .env
 | `OPENVPN_PASSWORD` | PIA password | |
 | `SERVER_REGIONS` | Comma-separated PIA regions with port forwarding (from PIA serverlist API; used with `PORT_FORWARD_ONLY` in compose) | see `.env.example` |
 | `VPN_PORT_FORWARDING` | Enable PIA port forwarding in Gluetun | `on` |
-| `LAN_SUBNET` | LAN + Tailscale CIDRs for Gluetun firewall (comma-separated) | `192.168.2.0/24,100.64.0.0/10` |
+| `LAN_SUBNET` | LAN CIDR(s) for Gluetun outbound allowlist. Do **not** include Tailscale `100.64.0.0/10` (breaks Tailscale routing under `network_mode: host`; use iptables post-rules instead). | `192.168.2.0/24` |
 | `DOCKER_SUBNET` | Docker network CIDR (Gluetun firewall allowlist) | `10.0.0.0/8` |
 | `JELLYFIN_PUBLISHED_SERVER_URL` | Public Jellyfin URL (Cloudflare Tunnel hostname) | `https://movies.mattapps.org` |
 | `WEBUI_PORT` | qBittorrent web UI port | `8080` |
@@ -376,7 +376,8 @@ Gluetun sidecars share its network namespace. If Gluetun restarted but qBittorre
 ### qBittorrent cannot be reached by Sonarr/Radarr
 
 - Confirm Sonarr/Radarr use host `gluetun` (not `qbittorrent` / `prowlarr`) and ports `8080` / `9696`.
-- Verify `FIREWALL_OUTBOUND_SUBNETS` in Gluetun includes your Docker network and Tailscale range. Adjust `LAN_SUBNET` / `DOCKER_SUBNET` in `.env` if needed.
+- Verify `FIREWALL_OUTBOUND_SUBNETS` includes your LAN and Docker networks via `LAN_SUBNET` / `DOCKER_SUBNET`. Do not put Tailscale `100.64.0.0/10` in `LAN_SUBNET` when Gluetun uses `network_mode: host`; keep Tailscale open via `${CONFIG_ROOT}/gluetun/iptables/post-rules.txt`.
+- Ensure `FIREWALL_INPUT_PORTS` includes `2222` (SSH) whenever Gluetun uses host networking, or SSH will be locked out on redeploy.
 - Confirm `FIREWALL_INPUT_PORTS` includes `${WEBUI_PORT}` and `${PROWLARR_PORT}` on the gluetun service.
 
 ### VPN container is unhealthy
