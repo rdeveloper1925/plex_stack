@@ -13,7 +13,10 @@ services:
       - SERVER_REGIONS=${SERVER_REGIONS}
       - PORT_FORWARD_ONLY=on
       - VPN_PORT_FORWARDING=${VPN_PORT_FORWARDING}
-      - FIREWALL_OUTBOUND_SUBNETS=${LAN_SUBNET},${DOCKER_SUBNET}
+      # LAN/Tailscale from env. Docker CIDRs are fixed here — never allowlist 10.0.0.0/8
+      # (that steers PIA's 10.x port-forward API off tun0). 10.0.1.0/24 is dokploy-network;
+      # 172.16.0.0/12 covers bridge/gwbridge. Prowlarr→Sonarr/Radarr uses the overlay.
+      - FIREWALL_OUTBOUND_SUBNETS=${LAN_SUBNET},10.0.1.0/24,172.16.0.0/12
       - FIREWALL_INPUT_PORTS=${WEBUI_PORT},${PROWLARR_PORT}
       - TZ=${TZ}
       - VPN_PORT_FORWARDING_UP_COMMAND=/bin/sh -c 'wget -O- -nv --tries=10 --waitretry=5 --retry-connrefused --post-data "json={\"listen_port\":{{PORT}},\"current_network_interface\":\"{{VPN_INTERFACE}}\",\"random_port\":false,\"upnp\":false}" http://127.0.0.1:${WEBUI_PORT}/api/v2/app/setPreferences'
