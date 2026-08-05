@@ -76,14 +76,14 @@ flowchart TB
 
 | Service | Image | Notes |
 |---------|-------|-------|
-| Jellyfin | `lscr.io/linuxserver/jellyfin:10.11.11ubu2404-ls39` | `127.0.0.1:8096` only (cloudflared); public at `https://movies.mattapps.org` |
-| qBittorrent | `lscr.io/linuxserver/qbittorrent:5.2.2_v2.0.13-ls464` | libtorrent v2 |
-| Sonarr | `lscr.io/linuxserver/sonarr:4.0.19.2979-ls316` | |
-| Radarr | `lscr.io/linuxserver/radarr:6.2.1.10461-ls308` | |
-| Prowlarr | `lscr.io/linuxserver/prowlarr:2.4.0.5397-ls151` | VPN-routed via `network_mode: service:gluetun` |
+| Jellyfin | `lscr.io/linuxserver/jellyfin:10.11.11ubu2604-ls43` | `127.0.0.1:8096` only (cloudflared); public at `https://movies.mattapps.org` |
+| qBittorrent | `lscr.io/linuxserver/qbittorrent:5.2.3_v2.0.13-ls469` | libtorrent v2 |
+| Sonarr | `lscr.io/linuxserver/sonarr:4.0.19.2979-ls320` | |
+| Radarr | `lscr.io/linuxserver/radarr:6.3.0.10514-ls313` | |
+| Prowlarr | `lscr.io/linuxserver/prowlarr:2.5.2.5491-ls155` | VPN-routed via `network_mode: service:gluetun` |
 | FlareSolverr | `ghcr.io/flaresolverr/flaresolverr:v3.5.0` | VPN-routed; Prowlarr reaches it at `http://127.0.0.1:8191` |
-| Seerr | `ghcr.io/seerr-team/seerr:v3.3.0` | Config at `/app/config`; runs as UID 1000 |
-| Gluetun | `qmcgaw/gluetun:latest@sha256:b0ee2135e6ba52ad3f102aae9663707cd1c9531485117067a380d3b2b6dd991d` | PIA OpenVPN client and kill switch (pinned by digest) |
+| Seerr | `ghcr.io/seerr-team/seerr:v3.4.1` | Config at `/app/config`; runs as UID 1000 |
+| Gluetun | `qmcgaw/gluetun:latest@sha256:f3fb345cd365acd1d89ee0f64db55a395f9d6789036aa0d6a48d56d79ebaf214` | PIA OpenVPN client and kill switch (pinned by digest) |
 
 All application images use [linuxserver.io](https://www.linuxserver.io/our-images) where available. Seerr and Gluetun are the exceptions. Image tags are pinned to specific versions for reproducible deployments; Gluetun is pinned by digest because it only publishes a rolling `latest` tag. Bump these tags deliberately rather than relying on `latest`.
 
@@ -309,18 +309,6 @@ Gluetun (`PORT_FORWARD_ONLY=on`) selects PIA servers that support port forwardin
 
 > If Seerr was previously configured for another media server, reset media server settings in the Seerr UI or clear `${CONFIG_ROOT}/seerr` and reconfigure.
 
-#### Migrating from Overseerr
-
-If upgrading from a previous Overseerr deployment, back up and copy config before the first Seerr deploy:
-
-```bash
-cp -a ${CONFIG_ROOT}/overseerr ${CONFIG_ROOT}/overseerr.backup-$(date +%Y%m%d)
-cp -a ${CONFIG_ROOT}/overseerr ${CONFIG_ROOT}/seerr
-chown -R 1000:1000 ${CONFIG_ROOT}/seerr
-```
-
-Seerr auto-migrates the Overseerr database on first startup. Check logs with `docker logs <seerr-container-id>` and verify the UI before deleting the old `overseerr` folder. See the [Seerr migration guide](https://docs.seerr.dev/migration-guide/).
-
 ## Security
 
 - **VPN kill switch** — `network_mode: service:gluetun` on qBittorrent, Prowlarr, and FlareSolverr ensures they cannot reach the internet without an active VPN connection. Those sidecars use `depends_on` with `restart: true` so Compose restarts them when Gluetun is recreated (otherwise their ports stop responding until manually restarted).
@@ -460,7 +448,6 @@ export CLOUDFLARE_API_TOKEN=your_token
 
 - [linuxserver.io images](https://www.linuxserver.io/our-images)
 - [Seerr Docker docs](https://docs.seerr.dev/getting-started/docker/)
-- [Seerr migration guide](https://docs.seerr.dev/migration-guide/)
 - [Gluetun wiki — PIA setup](https://github.com/qdm12/gluetun-wiki/blob/main/setup/providers/private-internet-access.md)
 - [Gluetun wiki — VPN port forwarding](https://github.com/qdm12/gluetun-wiki/blob/main/setup/advanced/vpn-port-forwarding.md)
 - [Dokploy Docker Compose docs](https://docs.dokploy.com/docs/core/docker-compose/example)
