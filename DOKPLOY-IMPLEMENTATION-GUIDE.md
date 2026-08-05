@@ -124,7 +124,6 @@ VPN_PORT_FORWARDING=on
 # --- Network / access ---
 BIND_IP=100.x.x.x
 LAN_SUBNET=192.168.1.0/24,100.64.0.0/10
-DOCKER_SUBNET=10.0.1.0/24,172.16.0.0/12
 
 # --- Jellyfin ---
 JELLYFIN_PUBLISHED_SERVER_URL=https://movies.mattapps.org
@@ -144,8 +143,7 @@ PROWLARR_PORT=9696
 | `BIND_IP` | Tailscale IP from Step 1.4 |
 | `OPENVPN_USER` / `OPENVPN_PASSWORD` | PIA credentials |
 | `SERVER_REGIONS` | Comma-separated **non-US** PIA regions; compose sets `PORT_FORWARD_ONLY=on` |
-| `LAN_SUBNET` | Your LAN CIDR **and** `100.64.0.0/10` (Tailscale), comma-separated |
-| `DOCKER_SUBNET` | Overlay + bridge CIDRs only (e.g. `10.0.1.0/24,172.16.0.0/12`). Do **not** use `10.0.0.0/8` — it breaks PIA port forwarding |
+| `LAN_SUBNET` | Your LAN CIDR **and** `100.64.0.0/10` (Tailscale), comma-separated. Do not add `10.0.0.0/8`. Docker overlay/bridge allowlists are hardcoded in compose. |
 | `JELLYFIN_PUBLISHED_SERVER_URL` | `https://movies.mattapps.org` (Cloudflare Tunnel public hostname) |
 | `WEBUI_PORT` | Leave as `8080` unless you have a conflict |
 | `PROWLARR_PORT` | Leave as `9696` unless you have a conflict |
@@ -291,7 +289,7 @@ The returned IP should **not** match your home/server public IP.
 docker logs $(docker ps -q --filter "name=gluetun") 2>&1 | grep -iE "port forward|forwarded port"
 ```
 
-You should see a forwarded port assigned. If you see `API IP address not found`, update `SERVER_REGIONS` to regions known to support PIA forwarding (e.g. `Netherlands,CA Toronto,Switzerland`) and redeploy. Compose already sets `PORT_FORWARD_ONLY=on`.
+You should see a forwarded port assigned. If you see `API IP address not found`, confirm the running compose hardcodes Docker outbound CIDRs (`10.0.1.0/24,172.16.0.0/12`) and that `LAN_SUBNET` does not include `10.0.0.0/8`. Then try `SERVER_REGIONS` known to support PIA forwarding (e.g. `Netherlands,CA Toronto,Switzerland`) and redeploy. Compose already sets `PORT_FORWARD_ONLY=on`.
 
 ---
 

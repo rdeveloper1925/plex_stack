@@ -69,6 +69,8 @@ flowchart TB
 | `docker-compose.yml` | Full stack definition |
 | `.env` | Your real configuration and secrets (gitignored) |
 | `.env.example` | Documented template — copy to `.env` and fill in |
+| `qbittorrent-init/` | qBittorrent path + forwarded-port sync on start |
+| `scripts/retry-pia-portforward.sh` | Optional forwarded-port check (logs only; does not restart) |
 | `DOKPLOY-IMPLEMENTATION-GUIDE.md` | Step-by-step Dokploy deployment and configuration walkthrough |
 | `.gitignore` | Excludes `.env` and local `config/` directories |
 
@@ -160,13 +162,12 @@ cp .env.example .env
 | `OPENVPN_PASSWORD` | PIA password | |
 | `SERVER_REGIONS` | Comma-separated PIA regions with port forwarding (from PIA serverlist API; used with `PORT_FORWARD_ONLY` in compose) | see `.env.example` |
 | `VPN_PORT_FORWARDING` | Enable PIA port forwarding in Gluetun | `on` |
-| `LAN_SUBNET` | LAN + Tailscale CIDRs for Gluetun firewall (comma-separated) | `192.168.2.0/24,100.64.0.0/10` |
-| `DOCKER_SUBNET` | Docker/overlay CIDRs for Gluetun firewall allowlist (not `10.0.0.0/8` — that breaks PIA port-forward API routing) | `10.0.1.0/24,172.16.0.0/12` |
+| `LAN_SUBNET` | LAN + Tailscale CIDRs for Gluetun firewall (comma-separated). Do not put Docker `10.0.0.0/8` here. | `192.168.2.0/24,100.64.0.0/10` |
 | `JELLYFIN_PUBLISHED_SERVER_URL` | Public Jellyfin URL (Cloudflare Tunnel hostname) | `https://movies.mattapps.org` |
 | `WEBUI_PORT` | qBittorrent web UI port | `8080` |
 | `PROWLARR_PORT` | Prowlarr web UI port (published on gluetun) | `9696` |
 
-In Dokploy, paste the same variables into the project's **Environment** tab on the **primary** instance. Compose substitutes `${VAR}` references in `docker-compose.yml`. VPN credentials are only passed to the Gluetun service block — other containers do not receive them.
+In Dokploy, paste the same variables into the project's **Environment** tab on the **primary** instance. Compose substitutes `${VAR}` references in `docker-compose.yml`. VPN credentials are only passed to the Gluetun service block — other containers do not receive them. A leftover `DOCKER_SUBNET` entry in Dokploy is unused and can be deleted.
 
 ## Dokploy deployment
 
@@ -318,7 +319,7 @@ Gluetun (`PORT_FORWARD_ONLY=on`) selects PIA servers that support port forwardin
 - **Jellyfin via Cloudflare Tunnel** — Host `cloudflared` forwards `movies.mattapps.org` to `127.0.0.1:8096`; Jellyfin is not bound on `${BIND_IP}`. Use `TimeoutStartSec=60` on the cloudflared systemd unit.
 - **Authentication** — Set strong passwords on qBittorrent, Sonarr, Radarr, Prowlarr, and Jellyfin.
 - **Prowlarr exposure** — Only reachable on Tailscale; not exposed to the public internet.
-- **PIA port forwarding** — `SERVER_REGIONS` lists PIA regions with port forwarding support. Compose sets `PORT_FORWARD_ONLY=on`. Keep `DOCKER_SUBNET` narrow (`10.0.1.0/24,172.16.0.0/12`); a broad `10.0.0.0/8` allowlist routes PIA's `10.x` control API off `tun0` and port forwarding fails.
+- **PIA port forwarding** — `SERVER_REGIONS` lists PIA regions with port forwarding support. Compose sets `PORT_FORWARD_ONLY=on` and hardcodes Docker outbound allowlists (`10.0.1.0/24`, `172.16.0.0/12`) so a Dokploy `DOCKER_SUBNET=10.0.0.0/8` cannot leak PIA's `10.x` control API off `tun0`.
 - **Same filesystem** — Keep `torrents/` and `media/` on the same volume so hardlinks work and seeding continues after import.
 
 ## Maintenance
@@ -368,7 +369,7 @@ Gluetun sidecars share its network namespace. If Gluetun restarted but qBittorre
 ### qBittorrent cannot be reached by Sonarr/Radarr
 
 - Confirm Sonarr/Radarr use host `gluetun` (not `qbittorrent` / `prowlarr`) and ports `8080` / `9696`.
-- Verify `FIREWALL_OUTBOUND_SUBNETS` includes your LAN and Docker networks via `LAN_SUBNET` / `DOCKER_SUBNET` (include Tailscale `100.64.0.0/10` in `LAN_SUBNET` when Gluetun is on `dokploy-network`).
+- Verify `LAN_SUBNET` includes your LAN and Tailscale (`100.64.0.0/10`). Compose already allowlists `dokploy-network` (`10.0.1.0/24`) and Docker bridges (`172.16.0.0/12`).
 - Confirm `FIREWALL_INPUT_PORTS` includes `${WEBUI_PORT}` and `${PROWLARR_PORT}` on the gluetun service.
 
 ### VPN container is unhealthy
@@ -380,7 +381,7 @@ Gluetun sidecars share its network namespace. If Gluetun restarted but qBittorre
 ### Port forwarding not working
 
 - Confirm `VPN_PORT_FORWARDING=on` and `SERVER_REGIONS` lists PIA port-forward regions (see `.env.example`).
-- If Gluetun logs `API IP address not found` / timeouts to `10.x.x.x:19999`, check `DOCKER_SUBNET`. It must **not** be `10.0.0.0/8` — that allowlists PIA's VPN-internal control plane off `tun0`. Use `10.0.1.0/24,172.16.0.0/12` (or your real overlay + bridge CIDRs).
+- If Gluetun logs `API IP address not found` / timeouts to `10.x.x.x:19999`, confirm compose is current (Docker CIDRs are hardcoded; `LAN_SUBNET` must not include `10.0.0.0/8`). Redeploy if an old `${DOCKER_SUBNET}` substitution is still in the live compose file.
 - If forwarding fails on one region, Gluetun rotates through the list; exotic regions may still fail Gluetun's PIA port-forward API lookup.
 - Compose sets `PORT_FORWARD_ONLY=on` on Gluetun — do not remove it.
 - Ensure qBittorrent has **Bypass authentication for clients on localhost** enabled (the init script sets this automatically).
@@ -403,7 +404,7 @@ docker run --rm --network bridge curlimages/curl:8.5.0 -sS -o /dev/null -w "%{ht
 - Verify: `curl -sS -o /dev/null -w "%{http_code} %{time_total}\n" https://movies.mattapps.org/web/`
 - Check Gluetun logs for port-forward assignment messages: `docker logs <gluetun-container-id> 2>&1 | grep -i port`
 - The `20-sync-forwarded-port.sh` init script retries syncing the port for up to 10 minutes after each qBittorrent start.
-- A host cron job (`scripts/retry-pia-portforward.sh`) restarts Gluetun and its sidecars (qBittorrent, Prowlarr, FlareSolverr) every 10 minutes when no forwarded port is assigned, rotating PIA servers until one works.
+- Optional host check: `scripts/retry-pia-portforward.sh` logs if no forwarded port is assigned. It does **not** restart containers (a restart loop previously took down qBittorrent/Prowlarr/FlareSolverr whenever forwarding failed).
 
 ### Permission errors on downloads or imports
 
