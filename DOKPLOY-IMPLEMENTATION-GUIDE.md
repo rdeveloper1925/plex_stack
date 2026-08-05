@@ -190,21 +190,7 @@ Dokploy injects these into Compose substitution (`${VAR}`). VPN credentials are 
 
 ## Phase 4: First deploy
 
-### Step 4.1 — Migrate Overseerr data (if upgrading)
-
-If you have an existing Overseerr deployment, run on the deploy host **before** deploying:
-
-```bash
-export CONFIG_ROOT=/home/matt/PLEX/config   # change to your path
-
-cp -a ${CONFIG_ROOT}/overseerr ${CONFIG_ROOT}/overseerr.backup-$(date +%Y%m%d)
-cp -a ${CONFIG_ROOT}/overseerr ${CONFIG_ROOT}/seerr
-chown -R 1000:1000 ${CONFIG_ROOT}/seerr
-```
-
-Seerr auto-migrates the Overseerr database on first startup. Skip this step for fresh installs — just ensure `${CONFIG_ROOT}/seerr` exists with correct permissions.
-
-### Step 4.2 — Deploy
+### Step 4.1 — Deploy
 
 1. Click **Deploy** in Dokploy.
 2. Watch the build/deploy logs.
@@ -218,7 +204,7 @@ Seerr auto-migrates the Overseerr database on first startup. Skip this step for 
    - `flaresolverr`
    - `seerr`
 
-### Step 4.3 — Confirm Gluetun is healthy
+### Step 4.2 — Confirm Gluetun is healthy
 
 On the deploy host:
 
@@ -228,7 +214,7 @@ docker ps --filter "name=gluetun"
 
 Status should be **healthy**.
 
-### Step 4.4 — Confirm Tailscale port bindings
+### Step 4.3 — Confirm Tailscale port bindings
 
 On the deploy host:
 
@@ -398,7 +384,7 @@ URL: `http://<BIND_IP>:5055`
 2. **Settings → Services → Sonarr** — hostname `sonarr`, port `8989`.
 3. **Settings → Services → Radarr** — hostname `radarr`, port `7878`.
 
-If migrating from Overseerr or switching from another media server, you may need to reset media server settings or clear `${CONFIG_ROOT}/seerr` and reconfigure. Check container logs for migration success:
+If Seerr was previously configured for another media server, reset media server settings in the UI or clear `${CONFIG_ROOT}/seerr` and reconfigure:
 
 ```bash
 docker logs $(docker ps -q --filter "name=seerr") 2>&1 | tail -50
